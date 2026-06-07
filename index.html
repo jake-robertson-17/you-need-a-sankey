@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You Need A Sankey</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0e0f1a; color: #e2e8f0; min-height: 100vh; }
+
+  .upload-screen {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; gap: 24px; padding: 40px;
+  }
+  .upload-screen h1 { font-size: 28px; font-weight: 600; color: #f7fafc; }
+  .upload-screen p { color: #94a3b8; font-size: 15px; text-align: center; max-width: 480px; line-height: 1.6; }
+  .upload-grid { display: grid; grid-template-columns: 1fr; gap: 16px; width: 100%; max-width: 480px; }
+  .upload-zone {
+    border: 2px dashed #3a3d6e; border-radius: 12px; padding: 32px 24px;
+    text-align: center; cursor: pointer; transition: all 0.2s;
+    background: #1d1f3a;
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: #6366f1; background: #232352; }
+  .upload-zone.loaded { border-color: #6366f1; border-style: solid; }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone .label { font-size: 13px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+  .upload-zone .filename { font-size: 12px; color: #6366f1; margin-top: 6px; word-break: break-all; }
+  .upload-zone input[type="file"] { display: none; }
+  .btn-go {
+    background: #6366f1; color: white; border: none; border-radius: 10px;
+    padding: 14px 40px; font-size: 16px; font-weight: 600; cursor: pointer;
+    transition: background 0.2s; opacity: 0.4; pointer-events: none;
+  }
+  .btn-go.ready { opacity: 1; pointer-events: auto; }
+  .btn-go.ready:hover { background: #4f46e5; }
+
+  .app-screen { display: flex; flex-direction: row; height: 100vh; }
+  /* No data yet: keep the toolbar visible but disable every control, and hide the
+     "replace data" drop zone (it's only useful once a diagram exists). */
+  .app-screen.empty .tb-dd,
+  .app-screen.empty .tb-switch,
+  .app-screen.empty .tb-text-btn { opacity: 0.4; pointer-events: none; }
+  .app-screen.empty .tb-drop { display: none; }
+
+  /* Big drop zone filling the chart area on first launch */
+  .chart-drop {
+    display: none; position: absolute; inset: 28px;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    border: 2px dashed #3a3d6e; border-radius: 16px; cursor: pointer; text-align: center;
+    color: #94a3b8;
+  }
+  .app-screen.empty .chart-drop { display: flex; }
+  .chart-drop:hover { border-color: #6366f1; }
+  .chart-drop.drag-over { border-color: #6366f1; background: #232352; }
+  .chart-drop .cd-icon { font-size: 56px; }
+  .chart-drop .cd-title { font-size: 22px; font-weight: 700; color: #f7fafc; }
+  .chart-drop .cd-hint { font-size: 14px; color: #94a3b8; }
+
+  .chart-back-btn {
+    display: none; align-items: center; gap: 8px;
+    position: absolute; top: 20px; left: 20px; z-index: 4;
+    padding: 10px 18px 10px 14px; font-family: inherit; font-size: 14px; font-weight: 600;
+    background: #1d1f3a; border: 1px solid #45487e; color: #e2e8f0;
+    border-radius: 999px; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  }
+  .chart-back-btn.visible { display: inline-flex; }
+  .chart-back-btn:hover { background: #2a2d4f; border-color: #6366f1; color: #c7d2fe; }
+  .chart-back-btn svg { width: 18px; height: 18px; }
+
+  .toolbar {
+    display: flex; flex-direction: column; align-items: stretch; gap: 14px;
+    width: 280px; flex-shrink: 0; height: 100vh; padding: 16px;
+    background: #181a30; border-right: 1px solid #2a2d4f;
+  }
+  .toolbar h1 { font-size: 18px; font-weight: 700; color: #f7fafc; margin-bottom: 2px; }
+  .toolbar label {
+    display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+    font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .toolbar select:focus { outline: none; border-color: #6366f1; }
+
+  /* Custom toolbar dropdowns (shared by Scope / Month / Sort / Colors) */
+  .tb-dd { position: relative; display: block; width: 100%; }
+  .tb-dd-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    width: 100%; font-family: inherit; text-align: left;
+    text-transform: none; letter-spacing: normal;
+    background: #2a2d4f; border: 1px solid #45487e; color: #e2e8f0;
+    border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  .tb-dd-btn .tb-dd-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tb-dd-btn:hover { background: #35386a; }
+  .tb-dd-caret { color: #94a3b8; font-size: 11px; flex-shrink: 0; }
+  .tb-menu {
+    display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+    background: #1d1f3a; border: 1px solid #45487e; border-radius: 10px;
+    padding: 6px; max-height: 60vh; overflow-y: auto;
+    text-transform: none; letter-spacing: normal;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  }
+  .tb-menu.open { display: block; }
+  .tb-menu-item {
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    border-radius: 6px; cursor: pointer; font-size: 13px; color: #e2e8f0;
+    white-space: nowrap;
+  }
+  .tb-menu-item:hover { background: #2a2d4f; }
+  .tb-menu-item.active { background: #312e81; }
+  .tb-menu-item .swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .tb-menu-header {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #64748b; padding: 8px 10px 4px; font-weight: 600;
+  }
+  .tb-menu-sep { height: 1px; background: #2a2d4f; margin: 4px 6px; }
+
+  /* Label-left / control-right rows (Colors, Show Amounts) */
+  .tb-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .tb-row-label { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+
+  /* Colors swatch button */
+  .tb-swatch { width: auto; }
+  .tb-swatch-btn { width: auto; justify-content: flex-start; gap: 8px; }
+  .tb-swatch-preview { display: inline-flex; gap: 2px; width: 52px; flex-shrink: 0; justify-content: flex-start; }
+  .tb-swatch-preview span { width: 7px; height: 14px; border-radius: 2px; display: block; }
+  .tb-swatch .tb-menu { left: auto; right: 0; }
+
+  /* Show Amounts switch */
+  .tb-switch {
+    position: relative; width: 40px; height: 22px; flex-shrink: 0;
+    border: none; border-radius: 11px; background: #45487e; cursor: pointer;
+    padding: 0; transition: background 0.15s;
+  }
+  .tb-switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: left 0.15s;
+  }
+  .tb-switch[aria-checked="true"] { background: #6366f1; }
+  .tb-switch[aria-checked="true"]::after { left: 20px; }
+
+  .toolbar-actions { margin-top: auto; display: flex; flex-direction: column; gap: 18px; align-items: stretch; }
+  .tb-text-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 34px; padding: 0 12px; font-family: inherit; font-size: 13px;
+    background: #2a2d4f; border: 1px solid #45487e; color: #e2e8f0;
+    border-radius: 6px; cursor: pointer;
+  }
+  .tb-text-btn:hover { background: #35386a; }
+  .tb-text-btn svg { width: 16px; height: 16px; }
+  .tb-icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; padding: 0;
+    background: #2a2d4f; border: 1px solid #45487e; color: #e2e8f0;
+    border-radius: 6px; cursor: pointer;
+  }
+  .tb-icon-btn:hover { background: #35386a; }
+  .tb-icon-btn.drag-over { border-color: #6366f1; background: #232352; }
+  .tb-icon-btn svg { width: 16px; height: 16px; display: block; }
+
+  /* Compact drop zone in the toolbar (mirrors the upload-screen zone) */
+  .tb-drop {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; height: 68px; padding: 0 12px;
+    border: 1px dashed #45487e; border-radius: 6px; cursor: pointer;
+    color: #94a3b8; font-size: 12px; white-space: nowrap;
+  }
+  .tb-drop:hover { border-color: #6366f1; color: #c7d2fe; }
+  .tb-drop.drag-over { border-color: #6366f1; background: #232352; color: #c7d2fe; }
+  .tb-drop .tb-drop-icon { font-size: 14px; }
+
+  #chart { flex: 1; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+  #chart svg { display: block; }
+
+  .sankey-node rect { cursor: pointer; }
+  .sankey-link { fill: none; cursor: pointer; }
+  .node-label { font-size: 12px; fill: #e2e8f0; pointer-events: none; dominant-baseline: middle; }
+  .node-label .nl-name { font-weight: 700; }
+  .node-label .nl-amt { font-weight: 400; }
+  .node-label-hub { font-size: 16px; }     /* Income / Spending / Savings */
+  .node-label-group { font-size: 14px; }   /* category groups */
+  .nl-toggle-btn { cursor: pointer; pointer-events: all; }
+  .nl-toggle-btn rect { fill: #2a2d4f; stroke: #45487e; stroke-width: 1px; }
+  .nl-toggle-btn:hover rect { fill: #35386a; }
+  .nl-toggle-btn text { fill: #e2e8f0; font-size: 10px; font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+
+  .tooltip {
+    position: absolute; background: #1d1f3a; border: 1px solid #45487e;
+    border-radius: 8px; padding: 10px 14px; font-size: 13px; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    max-width: 260px;
+  }
+  .tooltip .name { font-weight: 600; color: #f7fafc; margin-bottom: 4px; }
+  .tooltip .val { color: #6366f1; font-size: 15px; font-weight: 700; }
+  .tooltip .sub { color: #64748b; font-size: 11px; margin-top: 2px; }
+
+  .legend {
+    position: absolute; bottom: 16px; left: 20px; display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- App Screen (starts in the "empty" state = big drop zone until data is loaded) -->
+<div class="app-screen empty" id="appScreen">
+  <input type="file" id="fileReplace" accept=".csv" multiple hidden>
+  <div class="toolbar">
+    <h1>You Need A Sankey</h1>
+    <div class="tb-dd" id="ddScope">
+      <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
+      <div class="tb-menu"></div>
+    </div>
+    <select id="selMonth" onchange="render()" hidden><option value="all">All Months</option></select>
+    <div class="tb-dd" id="ddMonth">
+      <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
+      <div class="tb-menu"></div>
+    </div>
+    <select id="selSort" onchange="render()" hidden>
+      <option value="size">By size</option>
+      <option value="imported">As imported</option>
+    </select>
+    <div class="tb-dd" id="ddSort">
+      <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
+      <div class="tb-menu"></div>
+    </div>
+    <div class="tb-row">
+      <span class="tb-row-label">Colors</span>
+      <select id="selPalette" onchange="render()" hidden></select>
+      <div class="tb-dd tb-swatch" id="ddColors">
+        <button class="tb-dd-btn tb-swatch-btn" type="button"><span class="tb-swatch-preview"></span><span class="tb-dd-val"></span></button>
+        <div class="tb-menu"></div>
+      </div>
+    </div>
+    <div class="tb-row">
+      <span class="tb-row-label">Show Amounts</span>
+      <select id="selAmounts" onchange="render()" hidden>
+        <option value="on">On</option>
+        <option value="off">Off</option>
+      </select>
+      <button class="tb-switch" id="btnAmounts" type="button" role="switch" aria-checked="true"></button>
+    </div>
+    <div class="toolbar-actions">
+      <div class="tb-drop" id="btnFiles" title="Replace data — click or drop YNAB Register / Plan CSV files">
+        <span class="tb-drop-icon">📂</span>
+        <span>Drop CSVs to replace</span>
+      </div>
+      <button class="tb-text-btn" id="btnCopy" title="Copy diagram to clipboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <span>Copy image</span>
+      </button>
+    </div>
+  </div>
+  <div id="chart">
+    <button class="chart-back-btn" id="btnBack" title="Return to the full diagram">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      <span>All Spending</span>
+    </button>
+    <div class="chart-drop" id="chartDrop">
+      <div class="cd-icon">📂</div>
+      <div class="cd-title">Drop your YNAB CSV files here</div>
+      <div class="cd-hint">Register required · Plan optional · file types detected automatically</div>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+</div>
+
+<script>
+const GROUP_COLORS = {
+  'Expenses': '#6366f1',
+  'Bills': '#0ea5e9',
+  'Giving': '#22c55e',
+  'Savings': '#f59e0b',
+  'Inflow': '#94a3b8',
+};
+const DEFAULT_COLOR = '#a78bfa';
+const INCOME_COLOR = '#34d399';
+const UNSPENT_COLOR = '#10b981';   // money saved (income > spending)
+const OVERSPENT_COLOR = '#ef4444'; // money drawn from savings (spending > income)
+const SPENDING_COLOR = '#facc15';  // the Spending hub (yellow)
+const SPENDING_NODE = 'Spending';
+const SAVINGS_NODE = '💰 Savings';  // unique node id; rendered as "Savings"
+// The savings node carries a unique id (to avoid colliding with the "Savings"
+// category group) but is displayed simply as "Savings".
+function nodeDisplay(name) { return name === SAVINGS_NODE ? 'Savings' : name; }
+
+// Color palettes, named after small Washington State towns. "Skykomish" is the default
+// (Tableau 10); "Twisp" (null value) is the original hand-picked semantic colors
+// (GROUP_COLORS + green/yellow/red hubs). The rest are d3 categorical schemes plus a few
+// curated multi-hue palettes. A `null` value means "use the semantic fallbacks";
+// `undefined` (a d3 scheme missing from this build) is filtered out of the picker.
+const PALETTES = {
+  'Skykomish':  d3.schemeTableau10,    // default (Tableau 10)
+  'Twisp':      null,                  // original hand-picked semantic colors
+  'Winthrop':   d3.schemeCategory10,
+  'Coupeville': d3.schemeObservable10,
+  'Langley':    d3.schemeSet2,
+  'Roslyn':     d3.schemeSet3,
+};
+let paletteName = 'Skykomish';
+let groupColorMap = {};   // group -> palette color (empty = fall back to GROUP_COLORS)
+let hubColorMap = {};     // Income/Spending/Savings -> palette color (empty = semantic)
+
+// Assign palette colors to every themed node — groups first, then the Income/Spending/
+// Savings hubs — so the whole diagram reflects the palette. Colors are keyed by name so
+// they stay stable across sorts. "Default" leaves both maps empty (semantic fallbacks).
+function rebuildGroupColors() {
+  groupColorMap = {};
+  hubColorMap = {};
+  const scheme = PALETTES[paletteName];
+  if (!scheme) return;
+  let i = 0;
+  groupList.forEach(g => { groupColorMap[g] = scheme[i++ % scheme.length]; });
+  ['Income', SPENDING_NODE, SAVINGS_NODE].forEach(n => { hubColorMap[n] = scheme[i++ % scheme.length]; });
+}
+
+function groupColor(group) {
+  return groupColorMap[group] || GROUP_COLORS[group] || DEFAULT_COLOR;
+}
+
+function fmt(n) {
+  return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = parseCSVRow(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVRow(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+
+function parseCSVRow(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current); current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+let registerData = null, planData = null, dataMaxDate = null;
+let appBuilt = false;                  // true once the diagram screen is shown
+let scope = 'all';                    // 'all' = income root, or a category-group name
+const collapsedGroups = new Set();    // groups whose categories are merged into one node
+let groupList = [];                   // all spending category groups, ordered
+let planCatOrder = new Map();         // "Group:::Category" -> index in Plan file
+let planGroupOrder = [];              // group names in Plan-file order
+
+// File loading — single dropzone, auto-detect type from header row
+let registerName = null, planName = null;
+
+// Inspect the parsed header to decide which YNAB export this is.
+function detectType(headerLine) {
+  const h = headerLine.toLowerCase();
+  // Register has transaction columns; Plan has budget columns.
+  if (h.includes('account') && (h.includes('outflow') || h.includes('inflow') || h.includes('payee'))) return 'register';
+  if (h.includes('assigned') && h.includes('available')) return 'plan';
+  return null;
+}
+
+// --- Session persistence (survive a page refresh) -------------------------
+function saveData(kind, text, name) {
+  try {
+    localStorage.setItem('yns_' + kind, text);
+    localStorage.setItem('yns_' + kind + 'Name', name);
+  } catch (e) { /* storage unavailable — refresh just won't persist */ }
+}
+function safeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function saveViewState() {
+  try {
+    localStorage.setItem('yns_month', document.getElementById('selMonth').value);
+    localStorage.setItem('yns_sort', document.getElementById('selSort').value);
+    localStorage.setItem('yns_palette', document.getElementById('selPalette').value);
+    localStorage.setItem('yns_amounts', document.getElementById('selAmounts').value);
+    localStorage.setItem('yns_scope', scope);
+    localStorage.setItem('yns_collapsed', JSON.stringify([...collapsedGroups]));
+  } catch (e) { /* ignore */ }
+}
+
+// Build the Month dropdown options from the loaded register and pick the active period.
+function populateMonths() {
+  const months = new Set(), years = new Set();
+  dataMaxDate = null;
+  registerData.forEach(r => {
+    const d = r['Date'] || r['date'];
+    if (!d) return;
+    const dt = parseDate(d);
+    if (isNaN(dt)) return;
+    if (!dataMaxDate || dt > dataMaxDate) dataMaxDate = dt;
+    const [m, , y] = d.split('/');
+    months.add(`${y}-${m.padStart(2,'0')}`);
+    years.add(y);
+  });
+
+  const sel = document.getElementById('selMonth');
+  sel.innerHTML = '';
+  const addOpt = (parent, value, label) => {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = label;
+    parent.appendChild(o);
+  };
+  const addGroup = (label) => {
+    const g = document.createElement('optgroup');
+    g.label = label; sel.appendChild(g); return g;
+  };
+  const gPreset = addGroup('Presets');
+  addOpt(gPreset, 'all', 'All Time');
+  addOpt(gPreset, 't12', 'Trailing 12 Months');
+  addOpt(gPreset, 't6', 'Trailing 6 Months');
+  addOpt(gPreset, 't3', 'Trailing 3 Months');
+  addOpt(gPreset, 'ytd', `Year to Date (${dataMaxDate ? dataMaxDate.getFullYear() : ''})`);
+  const gYears = addGroup('Calendar Year');
+  [...years].sort().reverse().forEach(y => addOpt(gYears, `cy:${y}`, y));
+  const gMonths = addGroup('Month');
+  [...months].sort().reverse().forEach(m => {
+    const [y, mo] = m.split('-');
+    const label = new Date(+y, +mo - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    addOpt(gMonths, `m:${m}`, label);
+  });
+
+  const savedMonth = safeGet('yns_month');
+  sel.value = (savedMonth && [...sel.options].some(o => o.value === savedMonth)) ? savedMonth : 't12';
+}
+
+// Populate the palette picker and restore data-independent prefs (Colors / Show Amounts /
+// Sort). Runs on load so those controls work even before any file is dropped.
+function populatePrefs() {
+  const palSel = document.getElementById('selPalette');
+  palSel.innerHTML = '';
+  Object.keys(PALETTES).forEach(name => {
+    if (PALETTES[name] !== undefined) {   // null = semantic ("Twisp"); undefined = missing scheme
+      const o = document.createElement('option');
+      o.value = name; o.textContent = name;
+      palSel.appendChild(o);
+    }
+  });
+  const savedPal = safeGet('yns_palette');
+  palSel.value = (savedPal && [...palSel.options].some(o => o.value === savedPal)) ? savedPal : 'Skykomish';
+  document.getElementById('selAmounts').value = (safeGet('yns_amounts') === 'off') ? 'off' : 'on';
+  const sortSel = document.getElementById('selSort');
+  const savedSort = safeGet('yns_sort');
+  sortSel.value = (savedSort && [...sortSel.options].some(o => o.value === savedSort)) ? savedSort : 'size';
+}
+
+// First time real data arrives: leave the empty state and draw the diagram.
+function buildApp() {
+  if (!registerData || appBuilt) return;
+  appBuilt = true;
+  document.getElementById('appScreen').classList.remove('empty');
+  populateMonths();
+  const savedScope = safeGet('yns_scope');
+  if (savedScope) scope = savedScope;
+  const savedCollapsed = safeGet('yns_collapsed');
+  if (savedCollapsed) { try { JSON.parse(savedCollapsed).forEach(g => collapsedGroups.add(g)); } catch (e) {} }
+  buildPlanOrder();
+  buildGroupList();
+  refreshAllDropdowns();
+  render();
+}
+
+// New files dropped while the diagram is already up: swap in the data and redraw fresh.
+function reloadData() {
+  scope = 'all';
+  collapsedGroups.clear();
+  populateMonths();
+  document.getElementById('selMonth').value = 't12';
+  buildPlanOrder();
+  buildGroupList();
+  refreshAllDropdowns();
+  render();
+}
+
+// Capture the user's intentional ordering from the Plan file (groups and the categories
+// within them). The Plan repeats every month, so first occurrence = budget order.
+function buildPlanOrder() {
+  planCatOrder = new Map();
+  planGroupOrder = [];
+  if (!planData) return;
+  planData.forEach(r => {
+    const g = r['Category Group'] || '', c = r['Category'] || '';
+    if (!g || !c) return;
+    const key = `${g}:::${c}`;
+    if (!planCatOrder.has(key)) planCatOrder.set(key, planCatOrder.size);
+    if (!planGroupOrder.includes(g)) planGroupOrder.push(g);
+  });
+}
+
+// Collect every spending category group, ordered by the Plan file when available,
+// otherwise by palette then alphabetically.
+function buildGroupList() {
+  const SKIP = new Set(['', 'Inflow', 'inflow']);
+  const groups = new Set();
+  registerData.forEach(r => {
+    const g = r['Category Group'] || '';
+    if (!SKIP.has(g) && (r['Category'] || '')) groups.add(g);
+  });
+  if (planGroupOrder.length) {
+    groupList = [...groups].sort((a, b) => {
+      const ai = planGroupOrder.indexOf(a), bi = planGroupOrder.indexOf(b);
+      return (ai < 0 ? 1e9 : ai) - (bi < 0 ? 1e9 : bi);
+    });
+  } else {
+    const order = Object.keys(GROUP_COLORS);
+    groupList = [...groups].sort((a, b) => {
+      const ai = order.indexOf(a), bi = order.indexOf(b);
+      if (ai !== -1 || bi !== -1) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      return a.localeCompare(b);
+    });
+  }
+}
+
+// ---- Custom toolbar dropdowns (Scope / Month / Sort / Colors) --------------
+
+function setScope(newScope) {
+  scope = newScope;
+  render();
+}
+
+// Net spend per category group for the current time period (ignores scope) — used to
+// rank groups in the Scope menu when "By size" is selected.
+function periodGroupTotals() {
+  const totals = {};
+  if (!registerData) return totals;
+  const SKIP = new Set(['', 'Inflow', 'inflow']);
+  registerData.forEach(r => {
+    const g = r['Category Group'] || '', c = r['Category'] || '';
+    if (SKIP.has(g) || !c) return;
+    if (!dateInRange(r['Date'] || '')) return;
+    const net = parseFloat(r['Outflow'] || 0) - parseFloat(r['Inflow'] || 0);
+    if (net > 0) totals[g] = (totals[g] || 0) + net;
+  });
+  return totals;
+}
+
+// A dropdown "model" exposes getOptions() -> [{value,label,swatch?} | {header}],
+// getValue() -> current value, and onSelect(value).
+function selectModel(sel) {
+  return {
+    getOptions() {
+      const items = [];
+      [...sel.children].forEach(node => {
+        if (node.tagName === 'OPTGROUP') {
+          items.push({ header: node.label });
+          [...node.children].forEach(o => items.push({ value: o.value, label: o.textContent }));
+        } else if (node.tagName === 'OPTION') {
+          items.push({ value: node.value, label: node.textContent });
+        }
+      });
+      return items;
+    },
+    getValue: () => sel.value,
+    onSelect(v) { sel.value = v; render(); },
+  };
+}
+
+const scopeModel = {
+  getOptions() {
+    const items = [{ value: 'all', label: 'All Spending', swatch: INCOME_COLOR }, { sep: true }];
+    let groups = groupList;
+    if (document.getElementById('selSort').value === 'size') {
+      const t = periodGroupTotals();
+      groups = [...groupList].sort((a, b) => (t[b] || 0) - (t[a] || 0) || a.localeCompare(b));
+    }
+    groups.forEach(g => items.push({ value: g, label: g, swatch: groupColor(g) }));
+    return items;
+  },
+  getValue: () => scope,
+  onSelect: v => setScope(v),
+};
+
+// The preview colors for a palette (first few), used by both the Colors button and menu.
+function paletteSwatches(name) {
+  const colors = PALETTES[name] ||
+    [INCOME_COLOR, GROUP_COLORS.Expenses, GROUP_COLORS.Bills, GROUP_COLORS.Giving, GROUP_COLORS.Savings];
+  return colors.slice(0, 6);
+}
+
+const colorsModel = {
+  getOptions() {
+    const palSel = document.getElementById('selPalette');
+    return [...palSel.options].map(o => ({ value: o.value, label: o.value, swatches: paletteSwatches(o.value) }));
+  },
+  getValue: () => document.getElementById('selPalette').value,
+  onSelect(v) { document.getElementById('selPalette').value = v; render(); },
+};
+
+function closeAllMenus() {
+  document.querySelectorAll('.tb-menu.open').forEach(m => m.classList.remove('open'));
+}
+document.addEventListener('click', closeAllMenus);
+
+// Capitalize the first letter of each word (menu items render in title case).
+function titleCase(s) { return String(s).replace(/\b\w/g, c => c.toUpperCase()); }
+
+function setupDropdown(el, model) {
+  const valEl = el.querySelector('.tb-dd-val');
+  const menu = el.querySelector('.tb-menu');
+
+  const preview = el.querySelector('.tb-swatch-preview');
+  el._refresh = () => {
+    const cur = model.getValue();
+    const found = model.getOptions().find(i => !i.header && !i.sep && i.value === cur);
+    valEl.textContent = titleCase(found ? found.label : cur);
+    if (preview) {                       // Colors swatch: mini preview of the palette
+      preview.innerHTML = '';
+      paletteSwatches(cur).forEach(c => {
+        const s = document.createElement('span');
+        s.style.background = c;
+        preview.appendChild(s);
+      });
+    }
+  };
+
+  function renderMenu() {
+    const cur = model.getValue();
+    menu.innerHTML = '';
+    model.getOptions().forEach(item => {
+      if (item.sep) {
+        const s = document.createElement('div');
+        s.className = 'tb-menu-sep';
+        menu.appendChild(s);
+        return;
+      }
+      if (item.header) {
+        const h = document.createElement('div');
+        h.className = 'tb-menu-header';
+        h.textContent = item.header;
+        menu.appendChild(h);
+        return;
+      }
+      const it = document.createElement('div');
+      it.className = 'tb-menu-item' + (item.value === cur ? ' active' : '');
+      if (item.swatches) {               // multi-color preview (Colors menu)
+        const prev = document.createElement('span');
+        prev.className = 'tb-swatch-preview';
+        item.swatches.forEach(c => {
+          const s = document.createElement('span');
+          s.style.background = c;
+          prev.appendChild(s);
+        });
+        it.appendChild(prev);
+      } else if (item.swatch) {           // single-color square (Scope menu)
+        const sw = document.createElement('span');
+        sw.className = 'swatch';
+        sw.style.background = item.swatch;
+        it.appendChild(sw);
+      }
+      const lbl = document.createElement('span');
+      lbl.textContent = titleCase(item.label);
+      it.appendChild(lbl);
+      it.onclick = () => { menu.classList.remove('open'); model.onSelect(item.value); el._refresh(); };
+      menu.appendChild(it);
+    });
+  }
+
+  el.querySelector('.tb-dd-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    const willOpen = !menu.classList.contains('open');
+    closeAllMenus();
+    if (willOpen) { renderMenu(); menu.classList.add('open'); }
+  });
+
+  el._refresh();
+}
+
+function initDropdowns() {
+  setupDropdown(document.getElementById('ddScope'), scopeModel);
+  setupDropdown(document.getElementById('ddMonth'), selectModel(document.getElementById('selMonth')));
+  setupDropdown(document.getElementById('ddSort'), selectModel(document.getElementById('selSort')));
+  setupDropdown(document.getElementById('ddColors'), colorsModel);
+}
+
+function refreshAllDropdowns() {
+  document.querySelectorAll('.tb-dd').forEach(el => el._refresh && el._refresh());
+}
+
+// ---- Toolbar actions: copy-as-image & replace-data --------------------------
+
+const IMG_MARGIN = 80;      // px of background padding around the diagram
+const IMG_BG = '#0e0f1a';   // page background color, baked into the image
+
+// Rasterize the current diagram SVG (with background + margin) to an image Blob.
+function renderDiagramBlob(type) {
+  return new Promise((resolve, reject) => {
+    const svg = document.querySelector('#chart svg');
+    if (!svg) return reject(new Error('no diagram'));
+    const w = +svg.getAttribute('width'), h = +svg.getAttribute('height');
+
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('font-family', "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif");
+    const style = document.createElement('style');
+    style.textContent = document.querySelector('style').textContent;  // so CSS classes resolve
+    clone.insertBefore(style, clone.firstChild);
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+
+    const scale = 2;  // render at 2x for crispness
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = (w + 2 * IMG_MARGIN) * scale;
+      canvas.height = (h + 2 * IMG_MARGIN) * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale);
+      ctx.fillStyle = IMG_BG;
+      ctx.fillRect(0, 0, w + 2 * IMG_MARGIN, h + 2 * IMG_MARGIN);
+      ctx.drawImage(img, IMG_MARGIN, IMG_MARGIN, w, h);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('encode failed')), type, 0.95);
+    };
+    img.onerror = () => reject(new Error('svg load failed'));
+    img.src = url;
+  });
+}
+
+async function copyDiagramImage() {
+  try {
+    const png = await renderDiagramBlob('image/png');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    flashCopied();
+  } catch (e) {
+    // Clipboard unavailable (e.g. blocked) — download the PNG instead.
+    try {
+      const png = await renderDiagramBlob('image/png');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(png);
+      a.download = 'you-need-a-sankey.png';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e2) { console.error('copy/export failed', e2); }
+  }
+}
+
+function flashCopied() {
+  const btn = document.getElementById('btnCopy');
+  if (!btn) return;
+  const prev = btn.innerHTML;
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>';
+  setTimeout(() => { btn.innerHTML = prev; }, 1200);
+}
+
+// Load dropped/selected YNAB files in memory and (re)draw. localStorage is used only as
+// best-effort persistence — the diagram works even where storage is blocked (e.g. file://).
+function handleNewFiles(fileList) {
+  const files = [...fileList];
+  let pending = files.length, sawValid = false;
+  if (!pending) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = e.target.result;
+      const type = detectType((text.replace(/\r/g, '').split('\n')[0]) || '');
+      if (type === 'register') { registerData = parseCSV(text); registerName = file.name; saveData('register', text, file.name); sawValid = true; }
+      else if (type === 'plan') { planData = parseCSV(text); planName = file.name; saveData('plan', text, file.name); sawValid = true; }
+      if (--pending === 0) {
+        if (registerData) {
+          if (appBuilt) reloadData(); else buildApp();
+        } else {
+          alert(sawValid
+            ? 'A YNAB Register CSV is required (a Plan file alone is not enough).'
+            : 'No recognized YNAB Register or Plan CSV in the dropped files.');
+        }
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function initToolbarActions() {
+  document.getElementById('btnCopy').addEventListener('click', copyDiagramImage);
+  document.getElementById('btnBack').addEventListener('click', () => setScope('all'));
+
+  // Show Amounts switch (backed by the hidden #selAmounts select).
+  const amtSel = document.getElementById('selAmounts');
+  const amtSwitch = document.getElementById('btnAmounts');
+  const syncSwitch = () => amtSwitch.setAttribute('aria-checked', amtSel.value !== 'off' ? 'true' : 'false');
+  amtSwitch.addEventListener('click', () => {
+    amtSel.value = amtSel.value === 'off' ? 'on' : 'off';
+    syncSwitch();
+    render();
+  });
+  syncSwitch();
+
+  const filesBtn = document.getElementById('btnFiles');
+  const fileInput = document.getElementById('fileReplace');
+  filesBtn.addEventListener('click', () => fileInput.click());
+  filesBtn.addEventListener('dragover', e => { e.preventDefault(); filesBtn.classList.add('drag-over'); });
+  filesBtn.addEventListener('dragleave', () => filesBtn.classList.remove('drag-over'));
+  filesBtn.addEventListener('drop', e => {
+    e.preventDefault(); filesBtn.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleNewFiles(e.dataTransfer.files);
+  });
+}
+
+// Wire the big chart drop zone + the shared file input (works before any data is loaded).
+function initChartDrop() {
+  const fileInput = document.getElementById('fileReplace');
+  fileInput.addEventListener('change', () => { if (fileInput.files.length) handleNewFiles(fileInput.files); });
+
+  const drop = document.getElementById('chartDrop');
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleNewFiles(e.dataTransfer.files);
+  });
+}
+
+// Parse a YNAB MM/DD/YYYY date string to a Date
+function parseDate(d) {
+  const [m, day, y] = (d || '').split('/');
+  return new Date(+y, +m - 1, +day);
+}
+
+// Does a transaction date fall within the currently selected time scale?
+function dateInRange(dateStr) {
+  const sel = document.getElementById('selMonth').value;
+  if (sel === 'all') return true;
+  if (!dateStr) return false;
+  const dt = parseDate(dateStr);
+  if (isNaN(dt)) return false;
+
+  if (sel.startsWith('m:')) {
+    const [y, mo] = sel.slice(2).split('-');
+    return dt.getFullYear() === +y && dt.getMonth() + 1 === +mo;
+  }
+  if (sel.startsWith('cy:')) {
+    return dt.getFullYear() === +sel.slice(3);
+  }
+  if (sel === 'ytd') {
+    return dataMaxDate && dt.getFullYear() === dataMaxDate.getFullYear() && dt <= dataMaxDate;
+  }
+  if (sel[0] === 't') {
+    const n = +sel.slice(1);
+    const start = new Date(dataMaxDate);
+    start.setMonth(start.getMonth() - n);
+    return dt > start && dt <= dataMaxDate;
+  }
+  return true;
+}
+
+function getFilteredRows() {
+  const SKIP_GROUPS = new Set(['', 'Inflow', 'inflow']);
+
+  return registerData.filter(r => {
+    const group = r['Category Group'] || '';
+    const cat = r['Category'] || '';
+    if (SKIP_GROUPS.has(group)) return false;
+    if (!cat) return false;
+    if (scope !== 'all' && group !== scope) return false;   // scoped to one group
+    return dateInRange(r['Date'] || '');
+  });
+}
+
+function render() {
+  saveViewState();   // remember month / scope / collapsed across refreshes
+  paletteName = document.getElementById('selPalette').value || 'Skykomish';
+  rebuildGroupColors();
+  refreshAllDropdowns();
+  const backBtn = document.getElementById('btnBack');
+  if (backBtn) backBtn.classList.toggle('visible', scope !== 'all' && !!registerData);
+  if (!registerData) return;   // empty state: prefs persist, but nothing to draw yet
+  const rows = getFilteredRows();
+
+  // Aggregate spending by category
+  const catTotals = {}; // category -> net outflow
+  const catGroups = {}; // category -> group
+
+  rows.forEach(r => {
+    const group = r['Category Group'] || '';
+    const cat = r['Category'] || '';
+    const outflow = parseFloat(r['Outflow'] || 0);
+    const inflow = parseFloat(r['Inflow'] || 0);
+    const net = outflow - inflow;
+    if (net <= 0) return;
+
+    const key = `${group}:::${cat}`;
+    catTotals[key] = (catTotals[key] || 0) + net;
+    catGroups[key] = group;
+  });
+
+  // Period income (independent of scope)
+  let totalIncome = 0;
+  registerData.forEach(r => {
+    if ((r['Category Group'] || '') !== 'Inflow') return;
+    if (!dateInRange(r['Date'] || '')) return;
+    totalIncome += parseFloat(r['Inflow'] || 0);
+  });
+
+  // "Shown" spending is exactly what's drawn. Order depends on the Sort toggle.
+  const filteredCats = Object.entries(catTotals);
+  const sortMode = document.getElementById('selSort').value;
+  if (sortMode === 'size') {
+    // Groups ranked by total spend (largest first); categories by value within each.
+    const gTotals = {};
+    filteredCats.forEach(([k, v]) => { gTotals[catGroups[k]] = (gTotals[catGroups[k]] || 0) + v; });
+    const groupRank = {};
+    Object.keys(gTotals).sort((x, y) => gTotals[y] - gTotals[x] || x.localeCompare(y))
+      .forEach((g, i) => { groupRank[g] = i; });
+    filteredCats.sort((a, b) =>
+      (groupRank[catGroups[a[0]]] - groupRank[catGroups[b[0]]]) || (b[1] - a[1]));
+  } else {
+    // "As imported": group order then Plan-file order, register order as tiebreak.
+    filteredCats.forEach((e, i) => { e._i = i; });
+    filteredCats.sort((a, b) => {
+      const ga = groupList.indexOf(catGroups[a[0]]);
+      const gb = groupList.indexOf(catGroups[b[0]]);
+      if (ga !== gb) return (ga < 0 ? 1e9 : ga) - (gb < 0 ? 1e9 : gb);
+      const ca = planCatOrder.has(a[0]) ? planCatOrder.get(a[0]) : Infinity;
+      const cb = planCatOrder.has(b[0]) ? planCatOrder.get(b[0]) : Infinity;
+      if (ca !== cb) return ca - cb;
+      return a._i - b._i;
+    });
+  }
+  const shownSpend = filteredCats.reduce((s, [,v]) => s + v, 0);
+  const balance = totalIncome - shownSpend;          // >0 unspent, <0 overspent
+
+  // Keep the toolbar dropdown buttons in sync (scope can change via node clicks too).
+  refreshAllDropdowns();
+
+  if (filteredCats.length === 0) {
+    document.querySelector('#chart svg') && document.querySelector('#chart svg').remove();
+    return;
+  }
+
+  // Build Sankey nodes and links
+  const nodeMap = new Map();
+  const links = [];
+  function nodeId(name) {
+    if (!nodeMap.has(name)) nodeMap.set(name, { name, id: nodeMap.size });
+    return nodeMap.get(name).id;
+  }
+
+  const activeGroups = [...new Set(filteredCats.map(([k]) => catGroups[k]))];
+
+  if (scope === 'all') {
+    // (Income + Savings) → Spending → Group → Category (collapsed groups stay terminal).
+    nodeId('Income');
+    nodeId(SPENDING_NODE);
+    activeGroups.forEach(g => nodeId(g));
+    filteredCats.forEach(([key]) => {
+      if (collapsedGroups.has(catGroups[key])) return;
+      nodeId(key.split(':::')[1]);
+    });
+
+    // Funding side: Income always feeds Spending; the gap with savings reconciles.
+    const EPS = 0.5;
+    if (balance > EPS) {
+      // Income exceeds spending — the surplus is saved.
+      links.push({ source: 'Income', target: SPENDING_NODE, value: shownSpend });
+      nodeId(SAVINGS_NODE);
+      links.push({ source: 'Income', target: SAVINGS_NODE, value: balance });
+    } else if (balance < -EPS) {
+      // Spending exceeds income — the shortfall is drawn from savings.
+      links.push({ source: 'Income', target: SPENDING_NODE, value: totalIncome });
+      nodeId(SAVINGS_NODE);
+      links.push({ source: SAVINGS_NODE, target: SPENDING_NODE, value: -balance });
+    } else {
+      links.push({ source: 'Income', target: SPENDING_NODE, value: shownSpend });
+    }
+
+    // Spending → Group → Category
+    activeGroups.forEach(group => {
+      const groupTotal = filteredCats
+        .filter(([k]) => catGroups[k] === group)
+        .reduce((s,[,v]) => s + v, 0);
+      if (groupTotal > 0) links.push({ source: SPENDING_NODE, target: group, value: groupTotal, group });
+    });
+    filteredCats.forEach(([key, val]) => {
+      const group = catGroups[key];
+      if (collapsedGroups.has(group)) return;   // merged into the group node
+      links.push({ source: group, target: key.split(':::')[1], value: val, group });
+    });
+  } else {
+    // Scoped to one group: that group is the root, fanning to its categories.
+    nodeId(scope);
+    filteredCats.forEach(([key, val]) => {
+      const cat = key.split(':::')[1];
+      nodeId(cat);
+      links.push({ source: scope, target: cat, value: val, group: scope });
+    });
+  }
+
+  const nodes = [...nodeMap.values()].sort((a,b)=>a.id-b.id).map(n => ({ name: n.name }));
+
+  // Draw
+  const container = document.getElementById('chart');
+  const W = container.clientWidth * 0.86, H = container.clientHeight * 0.95;
+  const margin = { top: 20, right: 250, bottom: 20, left: 150 };
+
+  d3.select('#chart svg').remove();
+  const svg = d3.select('#chart').append('svg')
+    .attr('width', W).attr('height', H);
+
+  const sankey = d3.sankey()
+    .nodeId(d => d.name)
+    .nodeAlign(d3.sankeyLeft)   // stable columns: collapsed groups stay in place
+    .nodeSort(null)             // preserve our input order (group → Plan order) vertically
+    .nodeWidth(16)
+    .nodePadding(10)
+    .extent([[margin.left, margin.top], [W - margin.right, H - margin.bottom]]);
+
+  const { nodes: snodes, links: slinks } = sankey({ nodes: nodes.map(n => ({...n})), links: links.map(l => ({...l})) });
+
+  // Color for nodes
+  function nodeColor(name) {
+    if (hubColorMap[name]) return hubColorMap[name];         // palette overrides hubs
+    if (name === 'Income') return INCOME_COLOR;
+    if (name === SPENDING_NODE) return SPENDING_COLOR;
+    if (name === SAVINGS_NODE) return balance < 0 ? OVERSPENT_COLOR : UNSPENT_COLOR;
+    if (groupList.includes(name)) return groupColor(name);   // group node
+    // find the group this category belongs to
+    const entry = filteredCats.find(([k]) => k.split(':::')[1] === name);
+    if (entry) return groupColor(catGroups[entry[0]]);
+    return DEFAULT_COLOR;
+  }
+
+  // Links
+  const linkSel = svg.append('g').selectAll('.sankey-link')
+    .data(slinks).join('path')
+    .attr('class', 'sankey-link')
+    .attr('d', d3.sankeyLinkHorizontal())
+    .attr('stroke-width', d => Math.max(1, d.width))
+    .attr('stroke', d => nodeColor(d.source.name))
+    .attr('stroke-opacity', 0.35)
+    .on('mouseover', function(event, d) {
+      d3.select(this).attr('stroke-opacity', 0.6);
+      showTooltip(event, `${nodeDisplay(d.source.name)} → ${nodeDisplay(d.target.name)}`, d.value);
+    })
+    .on('mousemove', moveTooltip)
+    .on('mouseout', function() {
+      d3.select(this).attr('stroke-opacity', 0.35);
+      hideTooltip();
+    });
+
+  const isGroupNode = name => groupList.includes(name);
+  // A node is clickable when clicking it changes scope.
+  const scopeClickable = d =>
+    (scope === 'all' && isGroupNode(d.name)) || (scope !== 'all' && d.name === scope);
+
+  // Nodes
+  const nodeSel = svg.append('g').selectAll('.sankey-node')
+    .data(snodes).join('g')
+    .attr('class', 'sankey-node')
+    .on('mouseover', function(event, d) {
+      const hint = scopeClickable(d)
+        ? (scope === 'all' ? 'Click to focus on this group' : 'Click to return to all spending')
+        : `${d.sourceLinks.length} outflows, ${d.targetLinks.length} inflows`;
+      showTooltip(event, nodeDisplay(d.name), d.value, hint);
+    })
+    .on('mousemove', moveTooltip)
+    .on('mouseout', hideTooltip)
+    .on('click', function(event, d) {
+      if (scope === 'all' && isGroupNode(d.name)) setScope(d.name);
+      else if (scope !== 'all' && d.name === scope) setScope('all');
+    });
+
+  nodeSel.append('rect')
+    .attr('x', d => d.x0).attr('y', d => d.y0)
+    .attr('width', d => d.x1 - d.x0).attr('height', d => Math.max(1, d.y1 - d.y0))
+    .attr('fill', d => nodeColor(d.name))
+    .attr('rx', 3)
+    .style('cursor', d => scopeClickable(d) ? 'pointer' : 'default');
+
+  // Hub nodes (Income, Spending, Savings, groups) get a horizontal title-case label to
+  // the LEFT of the bar (right-aligned). Category nodes get one to the RIGHT (left-aligned).
+  const inBarNode = name =>
+    isGroupNode(name) || name === 'Income' || name === SPENDING_NODE || name === SAVINGS_NODE;
+
+  const showAmounts = document.getElementById('selAmounts').value !== 'off';
+  nodeSel.each(function(d) {
+    const g = d3.select(this);
+    const onLeft = inBarNode(d.name);
+    const disp = nodeDisplay(d.name);
+    const shortName = disp.length > 28 ? disp.slice(0, 26) + '…' : disp;
+    const amt = fmt(d.value);
+    const x = onLeft ? d.x0 - 8 : d.x1 + 8;
+    const text = g.append('text')
+      .attr('class', 'node-label' + (onLeft ? (isGroupNode(d.name) ? ' node-label-group' : ' node-label-hub') : ''))
+      .attr('x', x)
+      .attr('y', (d.y0 + d.y1) / 2)
+      .attr('text-anchor', onLeft ? 'end' : 'start');
+    const name = text.append('tspan').attr('class', 'nl-name').text(shortName);
+    if (showAmounts) {
+      if (onLeft) {
+        // Hub / group nodes (not the rightmost column): amount on its own line below.
+        name.attr('x', x).attr('dy', '-0.55em');
+        text.append('tspan').attr('class', 'nl-amt').attr('x', x).attr('dy', '1.1em').text(amt);
+      } else {
+        // Rightmost column (categories): name + amount on one line.
+        text.append('tspan').attr('class', 'nl-amt').attr('dx', 6).text(amt);
+      }
+    }
+
+    // Group nodes (in the all-spending view) get a small "Hide"/"Show" pill button
+    // beneath the label, letting the user collapse/expand that group's categories.
+    if (scope === 'all' && isGroupNode(d.name)) {
+      const collapsed = collapsedGroups.has(d.name);
+      const btnW = 38, btnH = 16;
+      const cy = (d.y0 + d.y1) / 2;
+      const labelBottom = cy + (showAmounts ? 16 : 8);
+      const btn = g.append('g')
+        .attr('class', 'nl-toggle-btn')
+        .attr('transform', `translate(${x - btnW}, ${labelBottom + 5})`)
+        .on('click', function(event) {
+          event.stopPropagation();
+          if (collapsedGroups.has(d.name)) collapsedGroups.delete(d.name);
+          else collapsedGroups.add(d.name);
+          render();
+        })
+        .on('mouseover', function(event) {
+          showTooltip(event, d.name, d.value,
+            collapsed ? 'Click to expand categories' : 'Click to merge categories into this group');
+        })
+        .on('mousemove', moveTooltip)
+        .on('mouseout', hideTooltip);
+      btn.append('rect').attr('width', btnW).attr('height', btnH).attr('rx', 4);
+      btn.append('text').attr('x', btnW / 2).attr('y', btnH / 2 + 1).text(collapsed ? 'Show' : 'Hide');
+    }
+  });
+}
+
+// Tooltip helpers
+const tooltip = document.getElementById('tooltip');
+function showTooltip(event, name, value, sub) {
+  tooltip.innerHTML = `<div class="name">${name}</div><div class="val">${fmt(value)}</div>${sub ? `<div class="sub">${sub}</div>` : ''}`;
+  tooltip.style.opacity = 1;
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  const rect = document.getElementById('chart').getBoundingClientRect();
+  let x = event.clientX - rect.left + 14;
+  let y = event.clientY - rect.top - 10;
+  if (x + 270 > rect.width) x -= 290;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+}
+function hideTooltip() { tooltip.style.opacity = 0; }
+
+window.addEventListener('resize', () => { if (appBuilt) render(); });
+
+// On load: wire all controls (Colors / Show Amounts work even before data), then either
+// restore a saved session or stay in the "empty" state (chart area = big drop zone).
+(function init() {
+  initChartDrop();
+  populatePrefs();
+  initDropdowns();
+  initToolbarActions();
+  refreshAllDropdowns();
+
+  const reg = safeGet('yns_register');
+  if (!reg) return;
+  registerData = parseCSV(reg);
+  registerName = safeGet('yns_registerName') || 'register.csv';
+  const plan = safeGet('yns_plan');
+  if (plan) { planData = parseCSV(plan); planName = safeGet('yns_planName') || 'plan.csv'; }
+  buildApp();
+})();
+</script>
+</body>
+</html>
