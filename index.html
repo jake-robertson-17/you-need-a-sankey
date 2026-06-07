@@ -113,11 +113,15 @@
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     color: #64748b; padding: 8px 10px 4px; font-weight: 600;
   }
+  .tb-menu-item.disabled { color: #64748b; cursor: default; }
+  .tb-menu-item.disabled:hover { background: none; }
+  .tb-menu-note { font-size: 11px; font-style: italic; color: #64748b; padding: 0 10px 6px 10px; white-space: nowrap; }
   .tb-menu-sep { height: 1px; background: #2a2d4f; margin: 4px 6px; }
 
   /* Label-left / control-right rows (Colors, Show Amounts) */
   .tb-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .tb-row-label { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+  .tb-disclaimer { display: block; white-space: normal; line-height: 1.4; }
 
   /* Colors swatch button */
   .tb-swatch { width: auto; }
@@ -208,6 +212,7 @@
   <input type="file" id="fileReplace" accept=".csv" multiple hidden>
   <div class="toolbar">
     <h1>You Need A Sankey</h1>
+    <span class="tb-row-label tb-disclaimer">Your data never leaves your computer, it's stored locally in your browser. Or at least that's what Claude Code says.</span>
     <div class="tb-dd" id="ddScope">
       <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
       <div class="tb-menu"></div>
@@ -218,8 +223,8 @@
       <div class="tb-menu"></div>
     </div>
     <select id="selSort" onchange="render()" hidden>
-      <option value="size">By size</option>
-      <option value="imported">As imported</option>
+      <option value="size">Category order by size</option>
+      <option value="imported">Category order from YNAB</option>
     </select>
     <div class="tb-dd" id="ddSort">
       <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
@@ -590,6 +595,22 @@ function paletteSwatches(name) {
   return colors.slice(0, 6);
 }
 
+// Sort menu. "Category order from YNAB" needs the Plan file to know the user's budget
+// ordering, so it's disabled (with a hint) until a Plan CSV has been uploaded.
+const sortModel = {
+  getOptions() {
+    const hasPlan = !!planData;
+    return [
+      { value: 'size', label: 'Category order by size' },
+      { value: 'imported', label: 'Category order from YNAB',
+        disabled: !hasPlan,
+        note: hasPlan ? null : 'Upload the corresponding Plan file' },
+    ];
+  },
+  getValue: () => document.getElementById('selSort').value,
+  onSelect(v) { document.getElementById('selSort').value = v; render(); },
+};
+
 const colorsModel = {
   getOptions() {
     const palSel = document.getElementById('selPalette');
@@ -644,7 +665,7 @@ function setupDropdown(el, model) {
         return;
       }
       const it = document.createElement('div');
-      it.className = 'tb-menu-item' + (item.value === cur ? ' active' : '');
+      it.className = 'tb-menu-item' + (item.value === cur ? ' active' : '') + (item.disabled ? ' disabled' : '');
       if (item.swatches) {               // multi-color preview (Colors menu)
         const prev = document.createElement('span');
         prev.className = 'tb-swatch-preview';
@@ -663,8 +684,18 @@ function setupDropdown(el, model) {
       const lbl = document.createElement('span');
       lbl.textContent = titleCase(item.label);
       it.appendChild(lbl);
-      it.onclick = () => { menu.classList.remove('open'); model.onSelect(item.value); el._refresh(); };
+      if (item.disabled) {
+        it.setAttribute('aria-disabled', 'true');
+      } else {
+        it.onclick = () => { menu.classList.remove('open'); model.onSelect(item.value); el._refresh(); };
+      }
       menu.appendChild(it);
+      if (item.note) {
+        const note = document.createElement('div');
+        note.className = 'tb-menu-note';
+        note.textContent = item.note;
+        menu.appendChild(note);
+      }
     });
   }
 
@@ -681,7 +712,7 @@ function setupDropdown(el, model) {
 function initDropdowns() {
   setupDropdown(document.getElementById('ddScope'), scopeModel);
   setupDropdown(document.getElementById('ddMonth'), selectModel(document.getElementById('selMonth')));
-  setupDropdown(document.getElementById('ddSort'), selectModel(document.getElementById('selSort')));
+  setupDropdown(document.getElementById('ddSort'), sortModel);
   setupDropdown(document.getElementById('ddColors'), colorsModel);
 }
 
@@ -1109,15 +1140,14 @@ function render() {
     }
 
     // Group nodes (in the all-spending view) get a small "Hide"/"Show" pill button
-    // beneath the label, letting the user collapse/expand that group's categories.
+    // just to the RIGHT of the bar, centered vertically on the node, letting the user
+    // collapse/expand that group's categories.
     if (scope === 'all' && isGroupNode(d.name)) {
       const collapsed = collapsedGroups.has(d.name);
       const btnW = 38, btnH = 16;
-      const cy = (d.y0 + d.y1) / 2;
-      const labelBottom = cy + (showAmounts ? 16 : 8);
       const btn = g.append('g')
         .attr('class', 'nl-toggle-btn')
-        .attr('transform', `translate(${x - btnW}, ${labelBottom + 5})`)
+        .attr('transform', `translate(${d.x1 + 8}, ${(d.y0 + d.y1) / 2 - btnH / 2})`)
         .on('click', function(event) {
           event.stopPropagation();
           if (collapsedGroups.has(d.name)) collapsedGroups.delete(d.name);
