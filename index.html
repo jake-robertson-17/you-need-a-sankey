@@ -1683,6 +1683,30 @@ function render() {
   }
   const findCluster = (parent, key) =>
     mergedClusters.find(c => c.parent === parent && c.members.includes(key));
+
+  // Combine-mode selection — shared by node-bar clicks AND label clicks (the label is
+  // a much larger touch target for tiny nodes). First click selects; a second click on
+  // a sibling merges them (extending/unioning clusters); the largest member's label wins.
+  function combineSelect(nodeName) {
+    if (!eligibleCombine(nodeName)) return;
+    if (!combineFirst) { combineFirst = nodeName; render(); return; }
+    if (combineFirst === nodeName) { combineFirst = null; render(); return; }
+    if (parentOf(combineFirst) === parentOf(nodeName)) {
+      const parent = parentOf(nodeName);
+      const k1 = keyOf(combineFirst), k2 = keyOf(nodeName);
+      const c1 = findCluster(parent, k1), c2 = findCluster(parent, k2);
+      if (c1 && c1 === c2) { /* already merged together */ }
+      else if (c1 && c2) { c1.members.push(...c2.members); mergedClusters = mergedClusters.filter(c => c !== c2); }
+      else if (c1) { c1.members.push(k2); }
+      else if (c2) { c2.members.push(k1); }
+      else { mergedClusters.push({ parent, members: [k1, k2] }); }
+      combineFirst = null;
+    } else {
+      combineFirst = nodeName;   // not siblings: restart selection here
+    }
+    render();
+  }
+
   // Redact mode dims the whole diagram so the (clickable) labels stand out. In
   // combine mode the combinable leaves stay bright while everything else recedes.
   const nodeOpacity = d => {
@@ -1739,34 +1763,7 @@ function render() {
     .on('mouseout', hideTooltip)
     .on('click', function(event, d) {
       if (activeMode === 'redact') return;   // redaction happens via label clicks
-      if (activeMode === 'combine') {
-        if (!eligibleCombine(d.name)) return;
-        if (!combineFirst) { combineFirst = d.name; render(); return; }
-        if (combineFirst === d.name) { combineFirst = null; render(); return; }
-        if (parentOf(combineFirst) === parentOf(d.name)) {
-          // Merge the two clicks: extend/union existing clusters or start a new one.
-          // The merged node takes the largest member's label automatically.
-          const parent = parentOf(d.name);
-          const k1 = keyOf(combineFirst), k2 = keyOf(d.name);
-          const c1 = findCluster(parent, k1), c2 = findCluster(parent, k2);
-          if (c1 && c1 === c2) { /* already merged together */ }
-          else if (c1 && c2) {
-            c1.members.push(...c2.members);
-            mergedClusters = mergedClusters.filter(c => c !== c2);
-          } else if (c1) {
-            c1.members.push(k2);
-          } else if (c2) {
-            c2.members.push(k1);
-          } else {
-            mergedClusters.push({ parent, members: [k1, k2] });
-          }
-          combineFirst = null;
-        } else {
-          combineFirst = d.name;   // not siblings: restart selection here
-        }
-        render();
-        return;
-      }
+      if (activeMode === 'combine') { combineSelect(d.name); return; }
       if (scope === 'all' && isGroupNode(d.name)) setScope(d.name);
       else if (scope !== 'all' && d.name === scope) setScope('all');
     });
@@ -1791,6 +1788,7 @@ function render() {
     isGroupNode(name) || isIncomeSrc(name) ||
     name === 'Income' || name === UNSPENT_NODE || name === SAVINGS_NODE;
 
+  const labelInfo = [];   // collected for the de-collision pass below
   nodeSel.each(function(d) {
     const g = d3.select(this);
     const onLeft = inBarNode(d.name);
@@ -1819,6 +1817,7 @@ function render() {
       .attr('y', (d.y0 + d.y1) / 2)
       .attr('text-anchor', onLeft ? 'end' : 'start');
     const name = text.append('tspan').attr('class', 'nl-name').text(shortName);
+    labelInfo.push({ textEl: text.node(), gEl: this, name: d.name, col: Math.round(d.x0), center: (d.y0 + d.y1) / 2, originalCenter: (d.y0 + d.y1) / 2 });
 
     if (amt) {
       if (onLeft) {
@@ -1845,7 +1844,20 @@ function render() {
           render();
         });
     } else if (activeMode === 'combine') {
-      text.attr('opacity', eligibleCombine(d.name) ? 1 : 0.25);
+      const eligible = eligibleCombine(d.name);
+      text.attr('opacity', eligible ? 1 : 0.25);
+      if (eligible) {
+        // The label is a large, easy touch target for selecting tiny nodes.
+        text.style('pointer-events', 'all').style('cursor', 'pointer')
+          .on('click', function(event) { event.stopPropagation(); combineSelect(d.name); });
+        // Plus an enlarged invisible hit area over the (often 1px-thin) bar itself.
+        const hh = (d.y1 - d.y0) + 10;
+        g.append('rect')
+          .attr('class', 'node-hit-rect')
+          .attr('x', d.x0 - 3).attr('y', (d.y0 + d.y1) / 2 - hh / 2)
+          .attr('width', (d.x1 - d.x0) + 6).attr('height', hh)
+          .attr('fill', 'none').style('pointer-events', 'all').style('cursor', 'pointer');
+      }
     } else if (!hiddenLabels.has(d.name)) {
       // Normal mode: click the NAME (not the amount/percent) to rename it. A rounded
       // highlight field appears behind just the name on hover.
@@ -1853,7 +1865,7 @@ function render() {
       name.classed('editable', true)
         .on('mouseenter', function() {
           const w = this.getComputedTextLength();
-          const lineY = (d.y0 + d.y1) / 2 + (amt && onLeft ? -0.55 * fs : 0);
+          const lineY = (+text.attr('y')) + (amt && onLeft ? -0.55 * fs : 0);
           g.insert('rect', 'text')
             .attr('class', 'label-hl')
             .attr('x', (onLeft ? x - w : x) - 5)
@@ -1871,6 +1883,63 @@ function render() {
     }
 
   });
+
+  // De-collide labels: within each column, nudge overlapping labels apart vertically so
+  // tightly-stacked tiny nodes (e.g. small income sources) stay readable. Measured at the
+  // base font (before zoom counter-scaling), so labels never overlap at any zoom level.
+  (function deCollideLabels() {
+    const GAP = 3, top = margin.top, bottom = H - margin.bottom;
+    const cols = new Map();
+    labelInfo.forEach(L => {
+      L.h = L.textEl.getBBox().height;
+      (cols.get(L.col) || cols.set(L.col, []).get(L.col)).push(L);
+    });
+    cols.forEach(list => {
+      list.sort((a, b) => a.center - b.center);
+      // Push overlapping labels downward.
+      for (let i = 1; i < list.length; i++) {
+        const minC = list[i - 1].center + list[i - 1].h / 2 + GAP + list[i].h / 2;
+        if (list[i].center < minC) list[i].center = minC;
+      }
+      // If the column overflowed the bottom, shift it up; then clamp the top.
+      const last = list[list.length - 1];
+      const over = (last.center + last.h / 2) - bottom;
+      if (over > 0) list.forEach(L => L.center -= over);
+      const under = top - (list[0].center - list[0].h / 2);
+      if (under > 0) list.forEach(L => L.center += under);
+      // Apply the adjusted positions.
+      list.forEach(L => L.textEl.setAttribute('y', L.center));
+    });
+  })();
+
+  // Fan node bars and ribbon endpoints to match the de-collided label positions.
+  // deCollideLabels may have nudged a label away from its node center; shift the bar
+  // rect and all attached link y-coordinates by the same delta so ribbons track the bar.
+  (function fanNodesToLabels() {
+    const byName = new Map(snodes.map(n => [n.name, n]));
+    let anyMoved = false;
+    labelInfo.forEach(L => {
+      const dy = L.center - L.originalCenter;
+      if (Math.abs(dy) < 0.5) return;
+      anyMoved = true;
+      const node = byName.get(L.name);
+      if (!node) return;
+      // Move the visible bar rect (first rect in the group, no class).
+      const g = d3.select(L.gEl);
+      const bar = g.select('rect:not(.node-hit-rect)');
+      bar.attr('y', +bar.attr('y') + dy);
+      // Move the invisible combine-mode hit rect if present.
+      g.select('.node-hit-rect').each(function() {
+        d3.select(this).attr('y', +d3.select(this).attr('y') + dy);
+      });
+      // Shift the sankey node bounds and its link attachment points.
+      node.y0 += dy; node.y1 += dy;
+      (node.sourceLinks || []).forEach(l => l.y0 += dy);
+      (node.targetLinks || []).forEach(l => l.y1 += dy);
+    });
+    // Redraw all ribbon paths with the updated link y0/y1 coordinates.
+    if (anyMoved) linkSel.attr('d', d3.sankeyLinkHorizontal());
+  })();
 
   // ---- Combine-mode overlays: selection ring and tethers ----
   if (activeMode === 'combine') {
