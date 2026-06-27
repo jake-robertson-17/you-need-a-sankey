@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>You Need A Sankey</title>
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
@@ -56,6 +56,22 @@
   .chart-drop .cd-icon { font-size: 56px; }
   .chart-drop .cd-title { font-size: 22px; font-weight: 700; color: #f7fafc; }
   .chart-drop .cd-hint { font-size: 14px; color: #94a3b8; }
+  .chart-drop .cd-or { font-size: 12px; color: #64748b; letter-spacing: 0.05em; }
+  .cd-demo {
+    font-family: inherit; font-size: 15px; font-weight: 600; color: #fff;
+    background: #6366f1; border: none; border-radius: 10px;
+    padding: 12px 28px; cursor: pointer; transition: background 0.2s;
+  }
+  .cd-demo:hover { background: #4f46e5; }
+  /* Mobile-only upload button (drag-and-drop makes no sense on touch). The desktop
+     drop-zone messaging is hidden and these buttons shown via the media query. */
+  .cd-upload {
+    font-family: inherit; font-size: 15px; font-weight: 600; color: #c7d2fe;
+    background: #2a2d4f; border: 1px solid #45487e; border-radius: 10px;
+    padding: 12px 28px; cursor: pointer; transition: all 0.2s; display: none;
+  }
+  .cd-upload:hover { background: #35386a; border-color: #6366f1; }
+  .tb-drop-mobile { display: none; }
 
   .chart-modes {
     position: absolute; top: 20px; left: 20px; z-index: 4;
@@ -270,6 +286,94 @@
   }
   .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+  /* Use dynamic viewport height where supported so mobile browser chrome
+     (address bar / home indicator) doesn't clip the bottom controls. */
+  .app-screen { height: 100dvh; }
+  .toolbar { height: 100dvh; }
+
+  /* Mobile nav: hamburger + drawer scrim are desktop-hidden, shown by the
+     media query below. */
+  .menu-btn {
+    display: none; position: fixed; z-index: 50;
+    top: calc(12px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left));
+    width: 42px; height: 42px; align-items: center; justify-content: center;
+    background: #1d1f3a; border: 1px solid #45487e; color: #e2e8f0;
+    border-radius: 10px; cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  }
+  .menu-btn svg { width: 22px; height: 22px; }
+  .drawer-scrim {
+    display: none; position: fixed; inset: 0; z-index: 40;
+    background: rgba(0,0,0,0.55);
+  }
+  .drawer-scrim.show { display: block; }
+
+  /* Code-editor-style minimap (feature-flagged; shown via JS) */
+  .minimap {
+    display: none; position: absolute; z-index: 5;
+    bottom: calc(70px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right));
+    width: 120px; background: rgba(13,15,28,0.92);
+    border: 1px solid #45487e; border-radius: 8px; overflow: hidden;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45); touch-action: none; cursor: pointer;
+  }
+  .minimap.show { display: block; }
+  .minimap svg { display: block; width: 100%; }
+  .minimap .mm-viewport { fill: rgba(99,102,241,0.18); stroke: #6366f1; stroke-width: 2; }
+
+  /* -------------------- Phone / portrait -------------------- */
+  @media (max-width: 768px) {
+    .app-screen { flex-direction: column; }
+
+    /* Toolbar becomes an off-canvas slide-in drawer */
+    .toolbar {
+      position: fixed; top: 0; left: 0; z-index: 45;
+      width: 85vw; max-width: 300px; height: 100dvh;
+      padding-top: calc(66px + env(safe-area-inset-top));   /* clear the hamburger */
+      padding-left: calc(16px + env(safe-area-inset-left));
+      overflow-y: auto;
+      transform: translateX(-100%); transition: transform 0.25s ease;
+      box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+    .toolbar.open { transform: translateX(0); }
+    .menu-btn { display: inline-flex; }
+
+    #chart { width: 100%; }
+    /* Let d3.zoom own touch gestures (pinch / drag-pan) instead of the browser
+       scrolling the panel — otherwise the two fight on touch. */
+    .chart-scroll { overflow: hidden; touch-action: none; }
+    #chart svg { touch-action: none; }
+
+    /* Keep the floating mode buttons clear of the hamburger */
+    .chart-modes { top: calc(12px + env(safe-area-inset-top)); left: 64px; gap: 8px; }
+    .chart-actions { top: calc(12px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); gap: 8px; }
+    .chart-zoom { bottom: calc(16px + env(safe-area-inset-bottom)); right: calc(12px + env(safe-area-inset-right)); }
+
+    /* Compact every floating pill to an icon-only circle */
+    .chart-copy-btn, .chart-back-btn {
+      padding: 9px; border-radius: 999px; gap: 0;
+    }
+    .chart-copy-btn span, .chart-back-btn span { display: none; }
+    #chart .chart-copy-btn svg, .chart-back-btn svg { display: block; }
+    /* In an edit mode the active button reads "Done redacting"/"Done merging" — it
+       drops the icon (no-icon) so it must show its label, and widen back to a pill. */
+    .chart-modes .chart-copy-btn.active { padding: 9px 16px; gap: 0; border-radius: 999px; }
+    .chart-modes .chart-copy-btn.active span { display: inline; }
+
+    /* Editing-mode instruction bar: keep it readable below the top controls */
+    .mode-bar { top: calc(62px + env(safe-area-inset-top)); max-width: 92%; font-size: 12px; }
+
+    /* Empty state: drop zone becomes a plain centered pair of buttons */
+    .chart-drop { inset: 16px; border: none; cursor: default; }
+    .chart-drop:hover { border: none; }
+    .chart-drop .cd-icon, .chart-drop .cd-title, .chart-drop .cd-hint, .chart-drop .cd-or { display: none; }
+    .cd-upload { display: inline-flex; align-items: center; gap: 8px; }
+
+    /* Toolbar "replace data": solid button labelled for upload, not a drop target */
+    .tb-drop { border-style: solid; border-color: #45487e; background: #2a2d4f; height: auto; padding: 12px; white-space: normal; text-align: center; }
+    .tb-drop:hover { background: #35386a; border-color: #6366f1; }
+    .tb-drop-desktop { display: none; }
+    .tb-drop-mobile { display: inline; }
+  }
 </style>
 </head>
 <body>
@@ -277,7 +381,12 @@
 <!-- App Screen (starts in the "empty" state = big drop zone until data is loaded) -->
 <div class="app-screen empty" id="appScreen">
   <input type="file" id="fileReplace" accept=".csv" multiple hidden>
-  <div class="toolbar">
+  <!-- Mobile-only: opens the toolbar as a slide-in drawer -->
+  <button class="menu-btn" id="btnMenu" type="button" aria-label="Open menu" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <div class="drawer-scrim" id="drawerScrim"></div>
+  <div class="toolbar" id="toolbar">
     <h1>You Need A Sankey</h1>
     <span class="tb-row-label tb-disclaimer">Your data never leaves your computer, it's stored locally in your browser. Or at least that's what Claude Code says.</span>
     <div class="tb-dd" id="ddScope">
@@ -347,7 +456,8 @@
     <div class="toolbar-actions">
       <div class="tb-drop" id="btnFiles" title="Replace data — click or drop YNAB Register / Plan CSV files">
         <span class="tb-drop-icon">📂</span>
-        <span>Drop CSVs to replace</span>
+        <span class="tb-drop-desktop">Drop CSVs to replace</span>
+        <span class="tb-drop-mobile">Upload CSV files from YNAB</span>
       </div>
     </div>
   </div>
@@ -387,8 +497,12 @@
       <div class="cd-icon">📂</div>
       <div class="cd-title">Drop your YNAB CSV files here</div>
       <div class="cd-hint">Register required · Plan optional · file types detected automatically</div>
+      <button class="cd-upload" id="btnUpload" type="button">📂 Upload CSV files from YNAB</button>
+      <div class="cd-or">— or —</div>
+      <button class="cd-demo" id="btnDemo" type="button">✨ Try it with demo data</button>
     </div>
     <div class="tooltip" id="tooltip"></div>
+    <div class="minimap" id="minimap"></div>
   </div>
 </div>
 
@@ -536,6 +650,37 @@ let zoomTransform = null;              // current pan/zoom of the diagram (survi
 let currentZoom = null, currentSvgRoot = null;   // live d3.zoom + svg, for the zoom control
 const ZOOM_MIN = 0.5, ZOOM_MAX = 4, ZOOM_STEP = 0.25;   // control bounds and 25% stops
 
+// ---- Feature flags & viewport ----------------------------------------------
+// Experimental mobile behaviors are off by default; flip via code constant or a
+// URL query param (e.g. ?minimap=1). `minimap` covers BOTH the open-zoomed-to-the-
+// last-column behavior and the code-editor-style minimap overview.
+const FLAGS = { minimap: false };
+new URLSearchParams(location.search).forEach((v, k) => {
+  if (k in FLAGS) FLAGS[k] = v !== '0' && v !== 'false';
+});
+const MOBILE_MQ = '(max-width: 768px)';
+const isMobile = () => matchMedia(MOBILE_MQ).matches;
+// Touch-first device: no hover, coarse pointer. Drives tap-to-show tooltips and
+// letting d3.zoom own gestures. (Also true for narrow touch laptops, which is fine.)
+const isTouch = matchMedia('(hover: none) and (pointer: coarse)').matches;
+let tapTipTimer = null;   // auto-dismiss timer for tap-shown tooltips
+// True once render() has applied a mobile default/flagged initial framing, so we
+// don't keep re-snapping the view on every re-render.
+let mobileViewInit = false;
+
+// Minimap (feature-flagged): module state shared between render() and the live
+// pan handlers so the viewport indicator tracks the main diagram's transform.
+let mmDims = null;      // { ratio, W, H } of the most recent minimap draw
+let mmViewRect = null;  // the <rect> element marking the visible region
+function updateMinimapViewport(t) {
+  if (!mmDims || !mmViewRect) return;
+  const { ratio, W, H } = mmDims, k = t.k || 1;
+  mmViewRect.setAttribute('x', (-t.x / k) * ratio);
+  mmViewRect.setAttribute('y', (-t.y / k) * ratio);
+  mmViewRect.setAttribute('width', (W / k) * ratio);
+  mmViewRect.setAttribute('height', (H / k) * ratio);
+}
+
 // User-renamed labels: node name -> display text. Display-only — the node keeps its
 // real name from the underlying data everywhere in the code.
 const customLabels = new Map();
@@ -671,6 +816,7 @@ function populatePrefs() {
 function buildApp() {
   if (!registerData || appBuilt) return;
   appBuilt = true;
+  mobileViewInit = false;   // let the first mobile render frame the view
   document.getElementById('appScreen').classList.remove('empty');
   populateMonths();
   const savedScope = safeGet('yns_scope');
@@ -699,6 +845,7 @@ function buildApp() {
 // New files dropped while the diagram is already up: swap in the data and redraw fresh.
 function reloadData() {
   scope = 'all';
+  mobileViewInit = false; zoomTransform = null;   // reframe for the new data on mobile
   populateMonths();
   document.getElementById('selMonth').value = 'd365';
   buildPlanOrder();
@@ -750,6 +897,8 @@ function buildGroupList() {
 
 function setScope(newScope) {
   scope = newScope;
+  // On mobile, drilling in/out reframes to the new last column (flag) or refits.
+  if (isMobile()) { mobileViewInit = false; zoomTransform = null; }
   render();
 }
 
@@ -1044,6 +1193,108 @@ function handleNewFiles(fileList) {
   });
 }
 
+// ---- Demo data --------------------------------------------------------------
+// Phone users (and anyone curious) rarely have a YNAB export handy, so we can
+// synthesize a realistic budget and feed it through the same path as a real CSV.
+// Output matches YNAB's export schema exactly (see detectType / parseCSV / render):
+//  Register: Account,Date,Payee,Category Group,Category,Memo,Outflow,Inflow
+//  Plan:     Category Group,Category,Assigned,Available
+// Deterministic (seeded) so the demo looks the same every time.
+function buildDemoData() {
+  // Small seeded PRNG (mulberry32) for stable, reproducible numbers.
+  let seed = 0x9e3779b9;
+  const rnd = () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const jitter = (base, pct) => +(base * (1 + (rnd() * 2 - 1) * pct)).toFixed(2);
+
+  // Spending model: [group, category, monthly base, variability]. Groups/colors
+  // align with GROUP_COLORS so the default palette looks intentional.
+  const SPEND = [
+    ['Bills', 'Rent',          1850, 0.00, ['Sunrise Apartments']],
+    ['Bills', 'Electric',        95, 0.30, ['City Power & Light']],
+    ['Bills', 'Internet',        70, 0.00, ['Comcast']],
+    ['Bills', 'Phone',           55, 0.05, ['Verizon']],
+    ['Expenses', 'Groceries',   520, 0.20, ['Trader Joes', 'Safeway', 'Costco']],
+    ['Expenses', 'Dining Out',  240, 0.40, ['Chipotle', 'Local Diner', 'Sushi Bar', 'Pizza Place']],
+    ['Expenses', 'Gas',         130, 0.25, ['Shell', 'Chevron']],
+    ['Expenses', 'Shopping',    180, 0.60, ['Amazon', 'Target', 'REI']],
+    ['Expenses', 'Entertainment', 90, 0.50, ['Netflix', 'Spotify', 'Steam', 'AMC Theatres']],
+    ['Expenses', 'Health',       75, 0.45, ['CVS Pharmacy', 'Dr. Chen']],
+    ['Giving', 'Charity',       120, 0.10, ['Red Cross']],
+    ['Giving', 'Gifts',          60, 0.80, ['Etsy', 'Bookshop']],
+    ['Savings', 'Emergency Fund', 300, 0.00, ['Ally Savings']],
+    ['Savings', 'Vacation',     200, 0.00, ['Ally Savings']],
+    ['Savings', 'Retirement',   400, 0.00, ['Vanguard']],
+  ];
+  const INCOME = [
+    ['Acme Corp',     3600, 0.00],   // steady paycheck
+    ['Freelance Co',   650, 0.70],   // variable side income
+  ];
+
+  const fmtDate = d => `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  const csvCell = s => /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  const rows = [];   // register rows (objects -> serialized below)
+
+  // 8 months ending with the current month (today: 2026-06-26).
+  const today = new Date(2026, 5, 26);
+  for (let back = 7; back >= 0; back--) {
+    const m = new Date(today.getFullYear(), today.getMonth() - back, 1);
+    const monthEnd = (back === 0) ? today.getDate()
+      : new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    const dayIn = () => 1 + Math.floor(rnd() * Math.min(27, monthEnd - 1));
+
+    // Income: paycheck near mid-month; side income occasionally.
+    INCOME.forEach(([payee, base, varia], i) => {
+      const amt = varia ? jitter(base, varia) : base;
+      if (varia && rnd() < 0.25) return;   // some months no freelance work
+      const d = new Date(m.getFullYear(), m.getMonth(), i === 0 ? 15 : dayIn());
+      rows.push({ Date: fmtDate(d), Payee: payee, 'Category Group': 'Inflow',
+        Category: 'Ready to Assign', Memo: '', Outflow: '0.00', Inflow: amt.toFixed(2) });
+    });
+
+    // Spending: 1–4 transactions per category per month.
+    SPEND.forEach(([group, cat, base, varia, payees]) => {
+      const n = (base > 800) ? 1 : 1 + Math.floor(rnd() * 3);
+      for (let k = 0; k < n; k++) {
+        const amt = jitter(base / n, varia);
+        if (amt <= 0) continue;
+        const d = new Date(m.getFullYear(), m.getMonth(), dayIn());
+        const payee = payees[Math.floor(rnd() * payees.length)];
+        rows.push({ Date: fmtDate(d), Payee: payee, 'Category Group': group,
+          Category: cat, Memo: '', Outflow: amt.toFixed(2), Inflow: '0.00' });
+      }
+    });
+  }
+
+  const regHeaders = ['Account', 'Date', 'Payee', 'Category Group', 'Category', 'Memo', 'Outflow', 'Inflow'];
+  const register = [regHeaders.join(',')]
+    .concat(rows.map(r => regHeaders.map(h => csvCell(String(h === 'Account' ? 'Checking' : (r[h] ?? '')))).join(',')))
+    .join('\n');
+
+  // Plan file: one row per category, in our intended display order, so YNAB
+  // ordering ("Category order from YNAB") has something to show.
+  const planHeaders = ['Category Group', 'Category', 'Assigned', 'Available'];
+  const planRows = SPEND.map(([group, cat, base]) =>
+    [group, cat, base.toFixed(2), '0.00'].map(csvCell).join(','));
+  const plan = [planHeaders.join(',')].concat(planRows).join('\n');
+
+  return { register, plan };
+}
+
+// Load the synthesized demo budget exactly as if the user had dropped the files.
+function loadDemoData() {
+  const { register, plan } = buildDemoData();
+  registerData = parseCSV(register); registerName = 'demo-register.csv';
+  planData = parseCSV(plan); planName = 'demo-plan.csv';
+  saveData('register', register, registerName);
+  saveData('plan', plan, planName);
+  if (appBuilt) reloadData(); else buildApp();
+}
+
 // ---- Editing-mode lifecycle -------------------------------------------------
 
 function enterMode(mode) {
@@ -1065,8 +1316,13 @@ function syncModeUI() {
   const hideBtn = document.getElementById('btnHideMode');
   const combineBtn = document.getElementById('btnCombineMode');
   const bar = document.getElementById('modeBar');
-  hideBtn.querySelector('span').textContent = activeMode === 'redact' ? 'Done' : 'Redact';
-  combineBtn.querySelector('span').textContent = activeMode === 'combine' ? 'Done' : 'Combine Categories';
+  // On phones the floating buttons are icon-only, so the "Done" label needs to name
+  // the mode it ends (the icon context is gone); desktop keeps the terse "Done".
+  const mob = isMobile();
+  hideBtn.querySelector('span').textContent =
+    activeMode === 'redact' ? (mob ? 'Done redacting' : 'Done') : 'Redact';
+  combineBtn.querySelector('span').textContent =
+    activeMode === 'combine' ? (mob ? 'Done merging' : 'Done') : 'Combine Categories';
   hideBtn.classList.toggle('active', activeMode === 'redact');
   combineBtn.classList.toggle('active', activeMode === 'combine');
   // Hide the leading icon while a button reads "Done".
@@ -1123,7 +1379,28 @@ function startLabelEdit(nodeName, textEl) {
   input.select();
 }
 
+// ---- Mobile drawer ----------------------------------------------------------
+function setDrawer(open) {
+  const tb = document.getElementById('toolbar');
+  const scrim = document.getElementById('drawerScrim');
+  const btn = document.getElementById('btnMenu');
+  tb.classList.toggle('open', open);
+  scrim.classList.toggle('show', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function initToolbarActions() {
+  const menuBtn = document.getElementById('btnMenu');
+  const scrim = document.getElementById('drawerScrim');
+  menuBtn.addEventListener('click', () =>
+    setDrawer(!document.getElementById('toolbar').classList.contains('open')));
+  scrim.addEventListener('click', () => setDrawer(false));
+  // Picking a Scope/Month/Sort/Colors option closes the drawer so the result is
+  // visible; toggles (switches) leave it open for quick successive tweaks.
+  document.getElementById('toolbar').addEventListener('click', e => {
+    if (e.target.closest('.tb-menu-item')) setDrawer(false);
+  });
+
   document.getElementById('btnCopy').addEventListener('click', copyDiagramImage);
   document.getElementById('btnDownload').addEventListener('click', downloadDiagramImage);
   document.getElementById('btnBack').addEventListener('click', () => setScope('all'));
@@ -1196,6 +1473,10 @@ function initChartDrop() {
 
   const drop = document.getElementById('chartDrop');
   drop.addEventListener('click', () => fileInput.click());
+  // Buttons live inside the drop zone — stop their clicks bubbling to the zone's
+  // own click handler (which would re-open the picker / be a no-op for demo).
+  document.getElementById('btnDemo').addEventListener('click', e => { e.stopPropagation(); loadDemoData(); });
+  document.getElementById('btnUpload').addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
   drop.addEventListener('drop', e => {
@@ -1585,10 +1866,15 @@ function render() {
 
   // Draw
   const container = document.getElementById('chartScroll');
-  const margin = { top: 48, right: 250, bottom: 48, left: 150 };
+  // Narrower label gutters on phones so the diagram itself isn't squeezed to nothing
+  // (desktop margins of 150/250 would exceed a ~390px viewport entirely).
+  const mob = isMobile();
+  const margin = mob
+    ? { top: 40, right: 110, bottom: 40, left: 84 }
+    : { top: 48, right: 250, bottom: 48, left: 150 };
   // The SVG fills the panel; the diagram is a zoomable canvas (wheel/pinch to zoom,
   // drag to pan, double-click to reset) so small nodes can be enlarged for clicking.
-  const W = Math.max(container.clientWidth, 400);
+  const W = Math.max(container.clientWidth, mob ? 300 : 400);
   const H = Math.max(container.clientHeight, 300);
 
   d3.select('#chartScroll').selectAll('svg').remove();
@@ -1616,6 +1902,7 @@ function render() {
       svg.attr('transform', ev.transform);
       scaleLabels(ev.transform.k);
       updateZoomUI(ev.transform.k);
+      updateMinimapViewport(ev.transform);
     });
   svgRoot.call(zoom)
     .on('dblclick.zoom', null);   // double-click resets instead of zooming in
@@ -1728,44 +2015,62 @@ function render() {
     .attr('stroke', d => nodeColor(d.source.name))
     .attr('stroke-opacity', linkBaseOpacity)
     .on('mouseover', function(event, d) {
-      if (activeMode) return;
+      if (activeMode || isTouch) return;
       d3.select(this).attr('stroke-opacity', 0.6);
       showTooltip(event, `${labelDisplay(d.source.name)} → ${labelDisplay(d.target.name)}`, d.value);
     })
-    .on('mousemove', moveTooltip)
+    .on('mousemove', function(event) { if (!isTouch) moveTooltip(event); })
     .on('mouseout', function() {
+      if (isTouch) return;
       d3.select(this).attr('stroke-opacity', linkBaseOpacity);
       hideTooltip();
+    })
+    .on('click', function(event, d) {
+      if (activeMode || !isTouch) return;
+      clearTimeout(tapTipTimer);
+      showTooltip(event, `${labelDisplay(d.source.name)} → ${labelDisplay(d.target.name)}`, d.value);
+      tapTipTimer = setTimeout(hideTooltip, 2600);
     });
 
   // Nodes
+  // Build and show a node's tooltip (shared by hover and, on touch, by tap).
+  function showNodeTip(event, d) {
+    const hint = scopeClickable(d)
+      ? (scope === 'all' ? 'Click to focus on this group' : 'Click to return to all spending')
+      : (isIncomeSrc(d.name) ? 'Income source'
+        : `${d.sourceLinks.length} outflows, ${d.targetLinks.length} inflows`);
+    // Delta vs the prior equivalent period (skipped for All Time, and for the
+    // Savings/Unspent nodes, whose meaning flips between surplus and deficit periods).
+    const tipValue = d.name === 'Income' ? totalIncome : d.value;
+    let delta = '';
+    if (prevNodeVals && d.name !== SAVINGS_NODE && d.name !== UNSPENT_NODE) {
+      const diff = tipValue - (prevNodeVals.get(d.name) || 0);
+      delta = Math.abs(diff) < 0.5
+        ? `≈ even ${prevPeriod.label}`
+        : `${diff > 0 ? '▲' : '▼'} ${fmt(Math.abs(diff))} ${prevPeriod.label}`;
+    }
+    showTooltip(event, labelDisplay(d.name), tipValue, [hint, delta].filter(Boolean).join('<br>'));
+  }
+
+  // Touch: a tap shows the tooltip, then it auto-dismisses (no mouseout on touch).
+  function tapTip(event, d) {
+    clearTimeout(tapTipTimer);
+    showNodeTip(event, d);
+    tapTipTimer = setTimeout(hideTooltip, 2600);
+  }
+
   const nodeSel = svg.append('g').selectAll('.sankey-node')
     .data(snodes).join('g')
     .attr('class', 'sankey-node')
-    .on('mouseover', function(event, d) {
-      const hint = scopeClickable(d)
-        ? (scope === 'all' ? 'Click to focus on this group' : 'Click to return to all spending')
-        : (isIncomeSrc(d.name) ? 'Income source'
-          : `${d.sourceLinks.length} outflows, ${d.targetLinks.length} inflows`);
-      // Delta vs the prior equivalent period (skipped for All Time, and for the
-      // Savings/Unspent nodes, whose meaning flips between surplus and deficit periods).
-      const tipValue = d.name === 'Income' ? totalIncome : d.value;
-      let delta = '';
-      if (prevNodeVals && d.name !== SAVINGS_NODE && d.name !== UNSPENT_NODE) {
-        const diff = tipValue - (prevNodeVals.get(d.name) || 0);
-        delta = Math.abs(diff) < 0.5
-          ? `≈ even ${prevPeriod.label}`
-          : `${diff > 0 ? '▲' : '▼'} ${fmt(Math.abs(diff))} ${prevPeriod.label}`;
-      }
-      showTooltip(event, labelDisplay(d.name), tipValue, [hint, delta].filter(Boolean).join('<br>'));
-    })
-    .on('mousemove', moveTooltip)
-    .on('mouseout', hideTooltip)
+    .on('mouseover', function(event, d) { if (!isTouch) showNodeTip(event, d); })
+    .on('mousemove', function(event) { if (!isTouch) moveTooltip(event); })
+    .on('mouseout', function() { if (!isTouch) hideTooltip(); })
     .on('click', function(event, d) {
       if (activeMode === 'redact') return;   // redaction happens via label clicks
       if (activeMode === 'combine') { combineSelect(d.name); return; }
       if (scope === 'all' && isGroupNode(d.name)) setScope(d.name);
       else if (scope !== 'all' && d.name === scope) setScope('all');
+      else if (isTouch) tapTip(event, d);    // leaf node on touch: surface its details
     });
 
   nodeSel.append('rect')
@@ -2005,6 +2310,58 @@ function render() {
     });
   }
 
+  // ---- Mobile initial framing (flagged) ----
+  // Default mobile behavior is fit-to-width (the layout already fills the panel at
+  // k=1 thanks to the narrower margins above). With ?minimap=1, open zoomed to the
+  // rightmost column so the most detailed nodes are legible on first load.
+  if (mob && !mobileViewInit && snodes.length) {
+    const clamp = v => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v));
+    const frame = (bx0, by0, bx1, by1) => {
+      const k = clamp(Math.min(W / (bx1 - bx0), H / (by1 - by0)));
+      svgRoot.call(zoom.transform, d3.zoomIdentity
+        .translate(W / 2 - k * (bx0 + bx1) / 2, H / 2 - k * (by0 + by1) / 2).scale(k));
+    };
+    if (FLAGS.minimap) {
+      // Zoom to the rightmost column so its (most detailed) nodes are legible.
+      const maxX1 = d3.max(snodes, n => n.x1);
+      const lastCol = snodes.filter(n => n.x1 >= maxX1 - 1);
+      frame(d3.min(lastCol, n => n.x0) - 12, d3.min(lastCol, n => n.y0) - 24,
+            maxX1 + margin.right * 0.85, d3.max(lastCol, n => n.y1) + 24);
+    } else {
+      // Default: fit the whole rendered diagram — nodes AND labels — to the panel.
+      // Two passes: labels counter-scale by 1/√k after a transform, so the first
+      // fit changes their size; re-measuring and re-fitting converges on a snug fit.
+      const fitToContent = () => {
+        const bb = svg.node().getBBox();
+        frame(bb.x - 6, bb.y - 6, bb.x + bb.width + 6, bb.y + bb.height + 6);
+      };
+      fitToContent();
+      fitToContent();
+    }
+  }
+  if (mob) mobileViewInit = true;
+
+  // ---- Minimap (flagged): a scaled-down overview with a draggable viewport ----
+  (function renderMinimap() {
+    const mm = document.getElementById('minimap');
+    const show = FLAGS.minimap && mob && snodes.length;
+    mm.classList.toggle('show', !!show);
+    if (!show) { mmDims = null; mmViewRect = null; mm.innerHTML = ''; return; }
+    const MMW = 120, ratio = MMW / W, MMH = Math.max(1, Math.round(H * ratio));
+    let rects = '';
+    snodes.forEach(n => {
+      rects += `<rect x="${(n.x0 * ratio).toFixed(1)}" y="${(n.y0 * ratio).toFixed(1)}"`
+        + ` width="${Math.max(1, (n.x1 - n.x0) * ratio).toFixed(1)}"`
+        + ` height="${Math.max(1, (n.y1 - n.y0) * ratio).toFixed(1)}"`
+        + ` fill="${nodeColor(n.name)}" opacity="0.85"/>`;
+    });
+    mm.innerHTML = `<svg viewBox="0 0 ${MMW} ${MMH}" width="${MMW}" height="${MMH}">`
+      + `${rects}<rect class="mm-viewport" x="0" y="0" width="${MMW}" height="${MMH}"/></svg>`;
+    mmDims = { ratio, W, H };
+    mmViewRect = mm.querySelector('.mm-viewport');
+    updateMinimapViewport(zoomTransform || d3.zoomIdentity);
+  })();
+
   // Apply the session's current zoom level to the freshly-drawn labels.
   scaleLabels(zoomTransform ? zoomTransform.k : 1);
 }
@@ -2054,7 +2411,41 @@ function resetZoom() {
   currentSvgRoot.transition().duration(200).call(currentZoom.transform, d3.zoomIdentity);
 }
 
-window.addEventListener('resize', () => { if (appBuilt) render(); });
+// Drag (or tap) the minimap to pan the main diagram. Wired once; reads live module
+// state (mmDims / currentZoom) so it survives re-renders.
+function initMinimap() {
+  const mm = document.getElementById('minimap');
+  let dragging = false;
+  const panTo = (clientX, clientY) => {
+    if (!mmDims || !currentZoom || !currentSvgRoot) return;
+    const r = mm.getBoundingClientRect();
+    const { ratio, W, H } = mmDims;
+    const cx = (clientX - r.left) / ratio;     // minimap point -> content coords
+    const cy = (clientY - r.top) / ratio;
+    const k = zoomTransform ? zoomTransform.k : 1;
+    currentSvgRoot.call(currentZoom.transform,
+      d3.zoomIdentity.translate(W / 2 - k * cx, H / 2 - k * cy).scale(k));
+  };
+  mm.addEventListener('pointerdown', e => {
+    dragging = true; mm.setPointerCapture(e.pointerId); panTo(e.clientX, e.clientY); e.preventDefault();
+  });
+  mm.addEventListener('pointermove', e => { if (dragging) panTo(e.clientX, e.clientY); });
+  mm.addEventListener('pointerup', () => { dragging = false; });
+  mm.addEventListener('pointercancel', () => { dragging = false; });
+}
+
+let wasMobile = isMobile();
+window.addEventListener('resize', () => {
+  if (!appBuilt) return;
+  // Only reframe when the viewport actually crosses the mobile breakpoint — mobile
+  // browsers fire resize constantly as the address bar shows/hides, and we don't
+  // want that to fight the user's current pan/zoom.
+  if (isMobile() !== wasMobile) {
+    wasMobile = isMobile(); mobileViewInit = false; zoomTransform = null;
+    if (activeMode) syncModeUI();   // refresh the "Done …" label for the new viewport
+  }
+  render();
+});
 
 // On load: wire all controls (Colors / Show Amounts work even before data), then either
 // restore a saved session or stay in the "empty" state (chart area = big drop zone).
@@ -2063,6 +2454,7 @@ window.addEventListener('resize', () => { if (appBuilt) render(); });
   populatePrefs();
   initDropdowns();
   initToolbarActions();
+  initMinimap();
   refreshAllDropdowns();
 
   const reg = safeGet('yns_register');
