@@ -57,6 +57,8 @@
   .chart-drop .cd-title { font-size: 22px; font-weight: 700; color: #f7fafc; }
   .chart-drop .cd-hint { font-size: 14px; color: #94a3b8; }
   .chart-drop .cd-or { font-size: 12px; color: #64748b; letter-spacing: 0.05em; }
+  .chart-drop .cd-or::before { content: "— "; }
+  .chart-drop .cd-or::after { content: " —"; }
   .cd-demo {
     font-family: inherit; font-size: 15px; font-weight: 600; color: #fff;
     background: #6366f1; border: none; border-radius: 10px;
@@ -311,14 +313,14 @@
   /* Code-editor-style minimap (feature-flagged; shown via JS) */
   .minimap {
     display: none; position: absolute; z-index: 5;
-    bottom: calc(70px + env(safe-area-inset-bottom)); right: calc(16px + env(safe-area-inset-right));
-    width: 120px; background: rgba(13,15,28,0.92);
+    bottom: calc(16px + env(safe-area-inset-bottom)); left: calc(16px + env(safe-area-inset-left));
+    width: 60px; background: rgba(13,15,28,0.92);
     border: 1px solid #45487e; border-radius: 8px; overflow: hidden;
     box-shadow: 0 6px 20px rgba(0,0,0,0.45); touch-action: none; cursor: pointer;
   }
   .minimap.show { display: block; }
   .minimap svg { display: block; width: 100%; }
-  .minimap .mm-viewport { fill: rgba(99,102,241,0.18); stroke: #6366f1; stroke-width: 2; }
+  .minimap .mm-viewport { fill: rgba(99,102,241,0.18); stroke: #6366f1; stroke-width: 1.5; }
 
   /* -------------------- Phone / portrait -------------------- */
   @media (max-width: 768px) {
@@ -365,8 +367,12 @@
     /* Empty state: drop zone becomes a plain centered pair of buttons */
     .chart-drop { inset: 16px; border: none; cursor: default; }
     .chart-drop:hover { border: none; }
-    .chart-drop .cd-icon, .chart-drop .cd-title, .chart-drop .cd-hint, .chart-drop .cd-or { display: none; }
-    .cd-upload { display: inline-flex; align-items: center; gap: 8px; }
+    .chart-drop .cd-icon, .chart-drop .cd-title, .chart-drop .cd-hint { display: none; }
+    /* Equal-width buttons separated by a small "OR" */
+    .cd-upload { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .cd-upload, .cd-demo { width: 100%; max-width: 320px; text-align: center; }
+    .chart-drop .cd-or { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .chart-drop .cd-or::before, .chart-drop .cd-or::after { content: ""; }
 
     /* Toolbar "replace data": solid button labelled for upload, not a drop target */
     .tb-drop { border-style: solid; border-color: #45487e; background: #2a2d4f; height: auto; padding: 12px; white-space: normal; text-align: center; }
@@ -498,7 +504,7 @@
       <div class="cd-title">Drop your YNAB CSV files here</div>
       <div class="cd-hint">Register required · Plan optional · file types detected automatically</div>
       <button class="cd-upload" id="btnUpload" type="button">📂 Upload CSV files from YNAB</button>
-      <div class="cd-or">— or —</div>
+      <div class="cd-or">or</div>
       <button class="cd-demo" id="btnDemo" type="button">✨ Try it with demo data</button>
     </div>
     <div class="tooltip" id="tooltip"></div>
@@ -664,6 +670,7 @@ const isMobile = () => matchMedia(MOBILE_MQ).matches;
 // letting d3.zoom own gestures. (Also true for narrow touch laptops, which is fine.)
 const isTouch = matchMedia('(hover: none) and (pointer: coarse)').matches;
 let tapTipTimer = null;   // auto-dismiss timer for tap-shown tooltips
+let editingLabel = false; // true while an inline label rename input is open
 // True once render() has applied a mobile default/flagged initial framing, so we
 // don't keep re-snapping the view on every re-render.
 let mobileViewInit = false;
@@ -1358,10 +1365,12 @@ function startLabelEdit(nodeName, textEl) {
   input.style.width = Math.max(tRect.width + 24, 140) + 'px';
   scrollEl.appendChild(input);
   textEl.setAttribute('opacity', 0);
+  editingLabel = true;
   let done = false;
   const close = commit => {
     if (done) return;
     done = true;
+    editingLabel = false;
     if (commit) {
       const v = input.value.trim();
       if (!v || v === nodeDisplay(nodeName)) customLabels.delete(nodeName);
@@ -1897,6 +1906,14 @@ function render() {
 
   const zoom = d3.zoom()
     .scaleExtent([ZOOM_MIN, ZOOM_MAX])
+    // Don't claim gestures that start on an editable label — otherwise d3.zoom's
+    // touchstart preventDefault swallows the tap and renaming never fires on mobile.
+    // (Default filter: ignore right-click and ctrl+drag, allow ctrl+wheel.)
+    .filter(event => {
+      const t = event.target;
+      if (t && t.closest && t.closest('.nl-name.editable')) return false;
+      return (!event.ctrlKey || event.type === 'wheel') && !event.button;
+    })
     .on('zoom', ev => {
       zoomTransform = ev.transform;
       svg.attr('transform', ev.transform);
@@ -2164,8 +2181,10 @@ function render() {
           .attr('fill', 'none').style('pointer-events', 'all').style('cursor', 'pointer');
       }
     } else if (!hiddenLabels.has(d.name)) {
-      // Normal mode: click the NAME (not the amount/percent) to rename it. A rounded
-      // highlight field appears behind just the name on hover.
+      // Normal mode: click/tap the NAME (not the amount/percent) to rename it. A
+      // rounded highlight field appears behind just the name on hover (desktop only).
+      // The zoom filter (see below) lets taps on `.nl-name.editable` through to this
+      // click handler on touch, where d3.zoom would otherwise swallow the gesture.
       const fs = baseFs;
       name.classed('editable', true)
         .on('mouseenter', function() {
@@ -2347,7 +2366,7 @@ function render() {
     const show = FLAGS.minimap && mob && snodes.length;
     mm.classList.toggle('show', !!show);
     if (!show) { mmDims = null; mmViewRect = null; mm.innerHTML = ''; return; }
-    const MMW = 120, ratio = MMW / W, MMH = Math.max(1, Math.round(H * ratio));
+    const MMW = 60, ratio = MMW / W, MMH = Math.max(1, Math.round(H * ratio));
     let rects = '';
     snodes.forEach(n => {
       rects += `<rect x="${(n.x0 * ratio).toFixed(1)}" y="${(n.y0 * ratio).toFixed(1)}"`
@@ -2437,6 +2456,7 @@ function initMinimap() {
 let wasMobile = isMobile();
 window.addEventListener('resize', () => {
   if (!appBuilt) return;
+  if (editingLabel) return;   // a rename is open — don't let a soft-keyboard resize nuke it
   // Only reframe when the viewport actually crosses the mobile breakpoint — mobile
   // browsers fire resize constantly as the address bar shows/hides, and we don't
   // want that to fight the user's current pan/zoom.
