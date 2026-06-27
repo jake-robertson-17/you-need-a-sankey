@@ -270,7 +270,7 @@
   .node-label .nl-name { font-weight: 700; }
   .node-label.nl-strike .nl-name { text-decoration: line-through; font-weight: 400; }
   .node-label .nl-amt { font-weight: 400; }
-  .node-label-hub { font-size: 16px; }     /* Income / Spending / Savings */
+  .node-label-hub { font-size: 14px; }     /* Income / Spending / Savings — matches groups */
   .node-label-group { font-size: 14px; }   /* category groups */
 
   .tooltip {
@@ -1885,10 +1885,13 @@ function render() {
   // drag to pan, double-click to reset) so small nodes can be enlarged for clicking.
   const W = Math.max(container.clientWidth, mob ? 300 : 400);
   const H = Math.max(container.clientHeight, 300);
-  // When the minimap is active on mobile, lay out the sankey on a wider virtual canvas
-  // so columns have breathing room and flows are easier to trace. The SVG viewport stays
-  // at W; zoom/pan (and the minimap) handle navigation across the wider content.
-  const VW = (mob && FLAGS.minimap) ? Math.max(W * 2.5, 900) : W;
+  // Lay out the sankey on a wider virtual canvas on mobile so columns have room and
+  // ribbons are easy to trace. The SVG viewport stays at W; zoom/pan (and the minimap)
+  // navigate the wider content. With the minimap: 2.5×. Without it: double the inner
+  // column span (so ribbons render twice as wide) and load anchored to the left column.
+  const VW = mob
+    ? (FLAGS.minimap ? Math.max(W * 2.5, 900) : 2 * W - margin.left - margin.right)
+    : W;
 
   d3.select('#chartScroll').selectAll('svg').remove();
   const svgRoot = d3.select('#chartScroll').append('svg')
@@ -2132,8 +2135,9 @@ function render() {
     const amt = fmtValue(dispValue);   // "" when Show Amounts and Show Percents are both off
     const x = onLeft ? d.x0 - 8 : d.x1 + 8;
     // Base font size by tier (mirrors the .node-label* CSS); stored so scaleLabels()
-    // can counter-scale it against zoom.
-    const baseFs = onLeft ? (d.name === 'Income' ? 16 : 14) : 12;
+    // can counter-scale it against zoom. All title labels share one size; only the
+    // rightmost (category) column is smaller.
+    const baseFs = onLeft ? 14 : 12;
     const text = g.append('text')
       .attr('class', 'node-label' + (onLeft
         ? (d.name === 'Income' ? ' node-label-hub' : ' node-label-group')
@@ -2359,15 +2363,24 @@ function render() {
       const ty = margin.top - k * byTop;             // top-align it vertically
       svgRoot.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
     } else {
-      // Default: fit the whole rendered diagram — nodes AND labels — to the panel.
-      // Two passes: labels counter-scale by 1/√k after a transform, so the first
-      // fit changes their size; re-measuring and re-fitting converges on a snug fit.
-      const fitToContent = () => {
+      // Default: the column span is doubled (VW above), so the whole diagram no longer
+      // fits across the viewport. Keep the previous (single-span) zoom level — which
+      // read well — and anchor to the LEFT so the leftmost column loads fully visible;
+      // the user pans right to follow the ribbons. refW reverses the widening so k
+      // matches what a fit-to-width of the un-widened layout would have produced.
+      // Two passes: labels counter-scale by 1/√k, so re-measuring converges the fit.
+      const innerOld = W - margin.left - margin.right;
+      const fitLeft = () => {
         const bb = svg.node().getBBox();
-        frame(bb.x - 6, bb.y - 6, bb.x + bb.width + 6, bb.y + bb.height + 6);
+        const refW = Math.max(bb.width - innerOld, 1);   // width as if columns weren't widened
+        const k = clamp((W - 12) / refW);
+        const tx = 6 - k * (bb.x - 6);                    // left-anchor with a small gutter
+        // Center vertically when it fits; otherwise top-align so the top isn't clipped.
+        const ty = Math.max(margin.top - k * bb.y, (H - k * bb.height) / 2 - k * bb.y);
+        svgRoot.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
       };
-      fitToContent();
-      fitToContent();
+      fitLeft();
+      fitLeft();
     }
   }
   if (mob) mobileViewInit = true;
