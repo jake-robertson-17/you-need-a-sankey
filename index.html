@@ -1885,6 +1885,10 @@ function render() {
   // drag to pan, double-click to reset) so small nodes can be enlarged for clicking.
   const W = Math.max(container.clientWidth, mob ? 300 : 400);
   const H = Math.max(container.clientHeight, 300);
+  // When the minimap is active on mobile, lay out the sankey on a wider virtual canvas
+  // so columns have breathing room and flows are easier to trace. The SVG viewport stays
+  // at W; zoom/pan (and the minimap) handle navigation across the wider content.
+  const VW = (mob && FLAGS.minimap) ? Math.max(W * 2.5, 900) : W;
 
   d3.select('#chartScroll').selectAll('svg').remove();
   const svgRoot = d3.select('#chartScroll').append('svg')
@@ -1938,7 +1942,7 @@ function render() {
     .nodeSort(null)             // preserve our input order (group → Plan order) vertically
     .nodeWidth(16)
     .nodePadding(14)
-    .extent([[margin.left, margin.top], [W - margin.right, H - margin.bottom]]);
+    .extent([[margin.left, margin.top], [VW - margin.right, H - margin.bottom]]);
 
   const { nodes: snodes, links: slinks } = sankey({ nodes: nodes.map(n => ({...n})), links: links.map(l => ({...l})) });
 
@@ -2341,11 +2345,19 @@ function render() {
         .translate(W / 2 - k * (bx0 + bx1) / 2, H / 2 - k * (by0 + by1) / 2).scale(k));
     };
     if (FLAGS.minimap) {
-      // Zoom to the rightmost column so its (most detailed) nodes are legible.
+      // Zoom to the rightmost (most detailed) column. The column spans nearly the
+      // full height, so fitting its height would shrink the whole diagram to ~1×
+      // and waste the wide viewport. With the minimap handling vertical navigation,
+      // fit to WIDTH instead (top-aligned) so the diagram loads large and legible.
       const maxX1 = d3.max(snodes, n => n.x1);
       const lastCol = snodes.filter(n => n.x1 >= maxX1 - 1);
-      frame(d3.min(lastCol, n => n.x0) - 12, d3.min(lastCol, n => n.y0) - 24,
-            maxX1 + margin.right * 0.85, d3.max(lastCol, n => n.y1) + 24);
+      const bx0 = d3.min(lastCol, n => n.x0) - 16;
+      const bx1 = maxX1 + margin.right * 0.9;       // include the column's labels (drawn right)
+      const byTop = d3.min(lastCol, n => n.y0) - 16;
+      const k = clamp(W / (bx1 - bx0));
+      const tx = W / 2 - k * (bx0 + bx1) / 2;        // center the column horizontally
+      const ty = margin.top - k * byTop;             // top-align it vertically
+      svgRoot.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
     } else {
       // Default: fit the whole rendered diagram — nodes AND labels — to the panel.
       // Two passes: labels counter-scale by 1/√k after a transform, so the first
@@ -2366,7 +2378,7 @@ function render() {
     const show = FLAGS.minimap && mob && snodes.length;
     mm.classList.toggle('show', !!show);
     if (!show) { mmDims = null; mmViewRect = null; mm.innerHTML = ''; return; }
-    const MMW = 60, ratio = MMW / W, MMH = Math.max(1, Math.round(H * ratio));
+    const MMW = 60, ratio = MMW / VW, MMH = Math.max(40, Math.round(H * ratio));
     let rects = '';
     snodes.forEach(n => {
       rects += `<rect x="${(n.x0 * ratio).toFixed(1)}" y="${(n.y0 * ratio).toFixed(1)}"`
