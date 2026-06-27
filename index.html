@@ -1873,7 +1873,9 @@ function render() {
     if (balance > EPS) {
       nodeId(UNSPENT_NODE);
       links.push({ source: 'Income', target: UNSPENT_NODE, value: balance });
-    } else if (balance < -EPS) {
+    } else if (balance < -EPS && incSources) {
+      // Deficit funding shows as a Savings node feeding Income — but only when
+      // income sources are shown. With sources hidden, it folds into Income too.
       nodeId(SAVINGS_NODE);
       links.push({ source: SAVINGS_NODE, target: 'Income', value: -balance });
     }
