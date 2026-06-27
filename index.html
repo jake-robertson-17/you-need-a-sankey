@@ -56,6 +56,7 @@
   .chart-drop .cd-icon { font-size: 56px; }
   .chart-drop .cd-title { font-size: 22px; font-weight: 700; color: #f7fafc; }
   .chart-drop .cd-hint { font-size: 14px; color: #94a3b8; }
+  .chart-drop .cd-mobile-note { display: none; }
   .chart-drop .cd-or { font-size: 12px; color: #64748b; letter-spacing: 0.05em; }
   .chart-drop .cd-or::before { content: "— "; }
   .chart-drop .cd-or::after { content: " —"; }
@@ -131,7 +132,7 @@
     display: none; position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
     z-index: 4; max-width: 70%; text-align: center;
     padding: 9px 18px; font-size: 13px; color: #c7d2fe;
-    background: #1d1f3a; border: 1px solid #6366f1; border-radius: 999px;
+    background: #181a30; border: 1px solid #2a2d4f; border-radius: 6px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.35);
   }
 
@@ -368,6 +369,11 @@
     .chart-drop { inset: 16px; border: none; cursor: default; }
     .chart-drop:hover { border: none; }
     .chart-drop .cd-icon, .chart-drop .cd-title, .chart-drop .cd-hint { display: none; }
+    .chart-drop .cd-mobile-note {
+      display: block; max-width: 320px; width: 100%; text-align: center;
+      padding: 9px 18px; font-size: 13px; color: #c7d2fe;
+      background: #181a30; border: 1px solid #2a2d4f; border-radius: 6px;
+    }
     /* Equal-width buttons separated by a small "OR" */
     .cd-upload { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
     .cd-upload, .cd-demo { width: 100%; max-width: 320px; text-align: center; }
@@ -394,7 +400,7 @@
   <div class="drawer-scrim" id="drawerScrim"></div>
   <div class="toolbar" id="toolbar">
     <h1>You Need A Sankey</h1>
-    <span class="tb-row-label tb-disclaimer">Your data never leaves your computer, it's stored locally in your browser. Or at least that's what Claude Code says.</span>
+    <span class="tb-row-label tb-disclaimer">Your data is stored locally in your browser and never leaves your computer.</span>
     <div class="tb-dd" id="ddScope">
       <button class="tb-dd-btn" type="button"><span class="tb-dd-val"></span><span class="tb-dd-caret">▾</span></button>
       <div class="tb-menu"></div>
@@ -503,6 +509,7 @@
       <div class="cd-icon">📂</div>
       <div class="cd-title">Drop your YNAB CSV files here</div>
       <div class="cd-hint">Register required · Plan optional · file types detected automatically</div>
+      <div class="cd-mobile-note">⚠️ Intended for larger devices.</div>
       <button class="cd-upload" id="btnUpload" type="button">📂 Upload CSV files from YNAB</button>
       <div class="cd-or">or</div>
       <button class="cd-demo" id="btnDemo" type="button">✨ Try it with demo data</button>
@@ -1340,8 +1347,8 @@ function syncModeUI() {
   document.getElementById('appScreen').classList.toggle('in-mode', !!activeMode);
   if (activeMode) {
     bar.textContent = activeMode === 'redact'
-      ? 'Redact: click any label to strike it out · it will read “Hidden” when you exit'
-      : 'Combine Categories: click sibling nodes two at a time to merge them — keep adding to grow a merger · the largest node\'s label wins · ✕ removes a node from a merger';
+      ? 'Redact: click any label to strike it out. It will read as “Hidden” instead.'
+      : 'Combine Categories: click nodes to merge them';
     bar.style.display = 'block';
   } else {
     bar.style.display = 'none';
