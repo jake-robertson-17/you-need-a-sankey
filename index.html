@@ -370,9 +370,11 @@
     .chart-drop:hover { border: none; }
     .chart-drop .cd-icon, .chart-drop .cd-title, .chart-drop .cd-hint { display: none; }
     .chart-drop .cd-mobile-note {
-      display: block; max-width: 320px; width: 100%; text-align: center;
+      display: block; position: absolute; top: 25%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 280px; max-width: calc(100% - 32px); text-align: center;
       padding: 9px 18px; font-size: 13px; color: #c7d2fe;
-      background: #181a30; border: 1px solid #2a2d4f; border-radius: 6px;
+      border: 1px solid #2a2d4f; border-radius: 6px;
     }
     /* Equal-width buttons separated by a small "OR" */
     .cd-upload { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
@@ -509,7 +511,7 @@
       <div class="cd-icon">📂</div>
       <div class="cd-title">Drop your YNAB CSV files here</div>
       <div class="cd-hint">Register required · Plan optional · file types detected automatically</div>
-      <div class="cd-mobile-note">⚠️ Intended for larger devices.</div>
+      <div class="cd-mobile-note">⚠️ Mobile support is experimental. Switch to a larger display for the best experience.</div>
       <button class="cd-upload" id="btnUpload" type="button">📂 Upload CSV files from YNAB</button>
       <div class="cd-or">or</div>
       <button class="cd-demo" id="btnDemo" type="button">✨ Try it with demo data</button>
@@ -1245,7 +1247,7 @@ function buildDemoData() {
     ['Savings', 'Retirement',   400, 0.00, ['Vanguard']],
   ];
   const INCOME = [
-    ['Acme Corp',     3600, 0.00],   // steady paycheck
+    ['Acme Corp',     4300, 0.00],   // steady paycheck (covers spending with room to spare)
     ['Freelance Co',   650, 0.70],   // variable side income
   ];
 
@@ -1269,6 +1271,13 @@ function buildDemoData() {
       rows.push({ Date: fmtDate(d), Payee: payee, 'Category Group': 'Inflow',
         Category: 'Ready to Assign', Memo: '', Outflow: '0.00', Inflow: amt.toFixed(2) });
     });
+
+    // A one-time windfall: $500 found on the sidewalk, in a single month.
+    if (back === 3) {
+      const d = new Date(m.getFullYear(), m.getMonth(), dayIn());
+      rows.push({ Date: fmtDate(d), Payee: 'Found on sidewalk', 'Category Group': 'Inflow',
+        Category: 'Ready to Assign', Memo: '', Outflow: '0.00', Inflow: '500.00' });
+    }
 
     // Spending: 1–4 transactions per category per month.
     SPEND.forEach(([group, cat, base, varia, payees]) => {
